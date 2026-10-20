@@ -20,6 +20,15 @@ Barcode-based food nutrition analysis system with health scoring and personalize
 - Goal tracking with progress and recommendations
 - Score explanation breakdown per product
 - User authentication and profiles
+- NutriScale scan sessions with mock-weight portion calculations
+
+### NutriScale flow
+
+`POST /scan` identifies a product and returns a pending `scan_session_id` with
+nutrition expressed per 100 grams. Submit a measured weight with
+`POST /scan-sessions/{id}/measurement`, then persist exactly one
+portion-aware food-log event with `POST /scan-sessions/{id}/save`. Scanning
+alone never counts as consumption.
 
 ## Setup
 

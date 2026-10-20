@@ -31,6 +31,7 @@ def _analyze_and_log(
     user_id: int,
     daily_calorie_limit: int,
     diet_type: str | None = None,
+    log_consumption: bool = True,
 ) -> dict[str, Any]:
     if not product.get("nutriscore"):
         predicted = predict_nutriscore(product)
@@ -74,18 +75,21 @@ def _analyze_and_log(
         user_id=int(user_id),
     )
 
-    db_service.log_food_consumption(
-        db,
-        barcode=str(product.get("barcode") or ""),
-        product_name=str(product.get("product_name") or ""),
-        calories=(product.get("nutrition") or {}).get("calories") if isinstance(product.get("nutrition"), dict) else product.get("calories"),
-        user_id=int(user_id),
-    )
+    if log_consumption:
+        db_service.log_food_consumption(
+            db,
+            barcode=str(product.get("barcode") or ""),
+            product_name=str(product.get("product_name") or ""),
+            calories=(product.get("nutrition") or {}).get("calories")
+            if isinstance(product.get("nutrition"), dict)
+            else product.get("calories"),
+            user_id=int(user_id),
+        )
 
-    today_calories = get_today_calories(db, user_id=int(user_id))
-    remaining_calories = get_remaining_calories(user_profile, db, user_id=int(user_id))
-    product["today_calories_consumed"] = today_calories
-    product["remaining_calories"] = remaining_calories
+        today_calories = get_today_calories(db, user_id=int(user_id))
+        remaining_calories = get_remaining_calories(user_profile, db, user_id=int(user_id))
+        product["today_calories_consumed"] = today_calories
+        product["remaining_calories"] = remaining_calories
 
     return product
 
@@ -97,16 +101,70 @@ def lookup_product(
     user_id: int = 1,
     daily_calorie_limit: int = 2000,
     diet_type: str | None = None,
+    log_consumption: bool = True,
 ) -> Optional[dict[str, Any]]:
     db_service.ensure_default_user(db)
 
-    local = db_service.get_product_by_barcode(db, barcode)
+    # The mobile name-search flow uses a placeholder barcode. Do not let a
+    # previously cached product for that placeholder override the requested name.
+    name_search = bool(product_name_hint and str(barcode) == "00000000")
+    local = None if name_search else db_service.get_product_by_barcode(db, barcode)
     if local is not None:
         logger.info("product served from local cache")
 
-        local = _analyze_and_log(db, local, user_id=int(user_id), daily_calorie_limit=int(daily_calorie_limit), diet_type=diet_type)
+        local = _analyze_and_log(
+            db,
+            local,
+            user_id=int(user_id),
+            daily_calorie_limit=int(daily_calorie_limit),
+            diet_type=diet_type,
+            log_consumption=log_consumption,
+        )
         db.commit()
         return local
+
+    if name_search:
+        dataset_product = search_indian_dataset(str(product_name_hint))
+        if dataset_product is None:
+            return None
+
+        product_obj = db_service.create_product(
+            db,
+            {
+                "barcode": str(barcode),
+                "product_name": str(dataset_product["product_name"]),
+                "nutriscore": None,
+                "ingredients": None,
+                "additives": None,
+            },
+        )
+        db_service.create_nutrition(
+            db,
+            {
+                "product_id": product_obj.id,
+                "calories": dataset_product.get("calories"),
+                "fat": dataset_product.get("fat"),
+                "sugar": dataset_product.get("sugar"),
+                "salt": dataset_product.get("salt"),
+                "protein": dataset_product.get("protein"),
+                "fiber": dataset_product.get("fiber"),
+                "carbs": dataset_product.get("carbs"),
+            },
+        )
+        db.commit()
+        stored = db_service.get_product_by_barcode(db, barcode)
+        if stored is None:
+            return None
+        stored = _analyze_and_log(
+            db,
+            stored,
+            user_id=int(user_id),
+            daily_calorie_limit=int(daily_calorie_limit),
+            diet_type=diet_type,
+            log_consumption=log_consumption,
+        )
+        db.commit()
+        return stored
 
     logger.info("product fetched from OpenFoodFacts API")
     fetched = fetch_product_by_barcode(barcode)
@@ -186,7 +244,14 @@ def lookup_product(
     if stored is None:
         return None
 
-    stored = _analyze_and_log(db, stored, user_id=int(user_id), daily_calorie_limit=int(daily_calorie_limit), diet_type=diet_type)
+    stored = _analyze_and_log(
+        db,
+        stored,
+        user_id=int(user_id),
+        daily_calorie_limit=int(daily_calorie_limit),
+        diet_type=diet_type,
+        log_consumption=log_consumption,
+    )
     db.commit()
 
     return stored

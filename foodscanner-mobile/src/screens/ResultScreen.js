@@ -1,37 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { explainProduct } from '../services/api';
-
-const C = {
-  cream: '#F5F2EC',
-  ink: '#1A1A17',
-  sage: '#4E8C52',
-  sageLight: '#C3D9C5',
-  amberLight: '#F0D9A8',
-  redLight: '#F0C8C0',
-  border: '#DDD8CE',
-  muted: '#888179',
-  white: '#FFFFFF',
-  red: '#B83C28',
-};
+import { colors, shadows, spacing } from '../theme';
+import PrimaryButton from '../components/PrimaryButton';
+import SectionHeader from '../components/SectionHeader';
 
 function _decisionMeta(decision) {
   const d = String(decision || '').toUpperCase();
-  if (d === 'SAFE') return { text: 'SAFE', bg: C.sageLight, fg: '#1e5222', icon: '✅' };
-  if (d === 'MODERATE') return { text: 'MODERATE', bg: C.amberLight, fg: '#7a4a0a', icon: '⚡' };
-  return { text: d || 'AVOID', bg: C.redLight, fg: '#8c1a0a', icon: '⛔' };
+  if (d === 'SAFE') return { text: 'HEALTHY / SAFE', bg: '#ECFDF5', fg: '#065F46', border: '#A7F3D0', icon: 'checkmark-circle' };
+  if (d === 'MODERATE') return { text: 'MODERATE CONSUMPTION', bg: '#FEF3C7', fg: '#92400E', border: '#FDE68A', icon: 'alert-circle' };
+  return { text: d || 'LIMIT / AVOID', bg: '#FEE2E2', fg: '#991B1B', border: '#FECACA', icon: 'close-circle' };
 }
 
 function _riskBadge(level) {
   const l = String(level || '').toUpperCase();
-  if (l.includes('LOW')) return { text: 'LOW', bg: C.sageLight, fg: '#1e5222', icon: '✅' };
-  if (l.includes('MED')) return { text: 'MEDIUM', bg: C.amberLight, fg: '#7a4a0a', icon: '⚡' };
-  if (l.includes('HIGH')) return { text: 'HIGH', bg: C.redLight, fg: '#8c1a0a', icon: '⛔' };
-  return { text: l || 'N/A', bg: C.white, fg: C.muted, icon: '•' };
+  if (l.includes('LOW')) return { text: 'LOW RISK', bg: '#ECFDF5', fg: '#065F46', icon: 'checkmark-circle-outline' };
+  if (l.includes('MED')) return { text: 'MEDIUM RISK', bg: '#FEF3C7', fg: '#92400E', icon: 'alert-circle-outline' };
+  if (l.includes('HIGH')) return { text: 'HIGH RISK', bg: '#FEE2E2', fg: '#991B1B', icon: 'warning-outline' };
+  return { text: l || 'N/A', bg: colors.surface, fg: colors.muted, icon: 'help-circle-outline' };
 }
 
-function NutrientRow({ label, value, max, color }) {
+function NutrientBar({ label, value, max, color, unit = 'g' }) {
   const v = Number(value) || 0;
   const m = Number(max) || 100;
   const pct = Math.max(0, Math.min(1, m ? v / m : 0));
@@ -39,7 +40,7 @@ function NutrientRow({ label, value, max, color }) {
     <View style={styles.nRow}>
       <View style={styles.nRowTop}>
         <Text style={styles.nLabel}>{label}</Text>
-        <Text style={styles.nValue}>{v}</Text>
+        <Text style={styles.nValue}>{v} <Text style={styles.nUnit}>{unit}</Text></Text>
       </View>
       <View style={styles.nBarBg}>
         <View style={[styles.nBarFill, { width: `${pct * 100}%`, backgroundColor: color }]} />
@@ -75,7 +76,7 @@ function _friendlyDietNote(dietNote) {
   if (!raw) return '';
 
   if (/Sugar\s*>\s*5g/i.test(raw) && /diabetic/i.test(raw)) {
-    return '⚠️ This product has high sugar — not recommended for diabetic diet.';
+    return 'High sugar detected — not recommended for diabetic nutrition.';
   }
 
   return _friendlyAdviceFromText(raw);
@@ -89,8 +90,7 @@ function _extractExplainSteps(explain) {
 function _extractFallbackReasons(result) {
   const a = Array.isArray(result?.reasons) ? result.reasons : [];
   const b = Array.isArray(result?.analysis?.reasons) ? result.analysis.reasons : [];
-  const reasons = [...a, ...b].filter(Boolean);
-  return reasons;
+  return [...a, ...b].filter(Boolean);
 }
 
 export default function ResultScreen({ route, navigation }) {
@@ -100,14 +100,15 @@ export default function ResultScreen({ route, navigation }) {
   const decision = result?.decision?.final_decision || result?.final_decision;
   const healthScore = result?.analysis?.health_score ?? result?.health_score;
   const productName = result?.product?.name || result?.product_name;
-  const nutrition = result?.product?.nutrition || result?.nutrition || {};
+  const nutrition = useMemo(() => (
+    result?.product?.nutrition || result?.nutrition || {}
+  ), [result]);
 
   const ingredientAnalysis = result?.analysis?.ingredient_analysis || result?.ingredient_analysis;
   const additiveAnalysis = result?.analysis?.additive_analysis || result?.additive_analysis;
   const dietNote = result?.diet_note;
 
   const [servingGrams, setServingGrams] = useState('100');
-
   const [loadingExplain, setLoadingExplain] = useState(false);
   const [explain, setExplain] = useState(null);
   const [explainError, setExplainError] = useState(false);
@@ -136,7 +137,7 @@ export default function ResultScreen({ route, navigation }) {
     try {
       const data = await explainProduct(barcode);
       setExplain(data);
-    } catch (e) {
+    } catch (_e) {
       setExplainError(true);
     } finally {
       setLoadingExplain(false);
@@ -152,7 +153,7 @@ export default function ResultScreen({ route, navigation }) {
     result?.diet_note ||
     '';
 
-  const reasonsJoined = useMemo(() => _extractFallbackReasons(result).join('; '), [route?.params?.timestamp]);
+  const reasonsJoined = useMemo(() => _extractFallbackReasons(result).join('; '), [result]);
   const friendlyDietNote = useMemo(() => _friendlyDietNote(dietNote), [dietNote]);
   const adviceText = useMemo(() => {
     const base = reasonsJoined || dietNote || 'Keep an eye on portion size and daily balance.';
@@ -176,7 +177,7 @@ export default function ResultScreen({ route, navigation }) {
     const scale = (v) => {
       const num = Number(v);
       if (!Number.isFinite(num)) return 0;
-      return Math.round(num * servingRatio * 100) / 100;
+      return Math.round(num * servingRatio * 10) / 10;
     };
 
     return {
@@ -197,7 +198,7 @@ export default function ResultScreen({ route, navigation }) {
     const r = Number(remaining);
     if (Number.isFinite(c) && Number.isFinite(r) && c >= 0 && r >= 0) return c + r;
     return 2000;
-  }, [route?.params?.timestamp]);
+  }, [result?.daily_intake?.consumed, result?.daily_intake?.remaining]);
 
   const servingPctOfDaily = useMemo(() => {
     const lim = Number(dailyCalorieLimit);
@@ -208,223 +209,651 @@ export default function ResultScreen({ route, navigation }) {
   const fallbackReasons = useMemo(() => {
     if (!explainError && String(barcode) !== '00000000') return [];
     return _extractFallbackReasons(result);
-  }, [route?.params?.timestamp, explainError, barcode]);
+  }, [result, explainError, barcode]);
 
   if (!result) {
     return (
-      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 16 }]}>
-        <Text style={{ color: C.muted, fontWeight: '700' }}>No result to show.</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <Text style={styles.emptyText}>No result to show.</Text>
+          <PrimaryButton onPress={() => navigation.navigate('Main', { screen: 'Scan' })}>
+            SCAN FOOD
+          </PrimaryButton>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.headerBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Result</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Navigation Bar */}
+        <View style={styles.topNav}>
+          <Pressable style={styles.navBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={20} color={colors.charcoal} />
+          </Pressable>
+          <Text style={styles.navTitle}>Nutrition Scorecard</Text>
+          <Pressable style={styles.navBtn} onPress={() => navigation.navigate('Main', { screen: 'Home' })}>
+            <Ionicons name="home-outline" size={20} color={colors.charcoal} />
+          </Pressable>
         </View>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('Main', { screen: 'Home' })}>
-          <Text style={styles.headerHomeText}>🏠 Home</Text>
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.productCard}>
-        <View style={styles.productEmojiCircle}>
-          <Text style={styles.productEmoji}>🥫</Text>
+        {/* Product Card */}
+        <View style={styles.productCard}>
+          <View style={styles.productIconCircle}>
+            <Ionicons name="nutrition" size={28} color={colors.emerald} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.productName} numberOfLines={2}>{productName || 'Unknown product'}</Text>
+            {brand ? <Text style={styles.productBrand} numberOfLines={1}>{brand}</Text> : null}
+            {barcode && barcode !== '00000000' ? (
+              <Text style={styles.barcodeText}>Barcode: {barcode}</Text>
+            ) : null}
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.productName} numberOfLines={2}>{productName || 'Unknown product'}</Text>
-          <Text style={styles.productBrand} numberOfLines={1}>{brand || ' '}</Text>
-        </View>
-      </View>
 
-      <View style={[styles.verdictBanner, { backgroundColor: decisionMeta.bg, borderColor: C.border }]}>
-        <Text style={[styles.verdictTitle, { color: decisionMeta.fg }]}>{decisionMeta.icon} {decisionMeta.text}</Text>
-        <Text style={[styles.verdictReason, { color: decisionMeta.fg }]} numberOfLines={3}>
-          {verdictReason || 'Verdict based on nutrition and ingredient profile.'}
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Nutrition per 100g</Text>
-        <NutrientRow label="Calories" value={nutrition.calories ?? 0} max={500} color={C.sage} />
-        <NutrientRow label="Sugar (g)" value={nutrition.sugar ?? 0} max={50} color={C.amberLight} />
-        <NutrientRow label="Salt (g)" value={nutrition.salt ?? 0} max={10} color={C.redLight} />
-        <NutrientRow label="Fat (g)" value={nutrition.fat ?? 0} max={70} color={C.amberLight} />
-        <NutrientRow label="Protein (g)" value={nutrition.protein ?? 0} max={50} color={C.sageLight} />
-        <NutrientRow label="Fiber (g)" value={nutrition.fiber ?? 0} max={30} color={C.sageLight} />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Calculate for My Serving</Text>
-        <Text style={styles.cardText}>How much are you eating? (g)</Text>
-        <TextInput
-          style={styles.servingInput}
-          value={servingGrams}
-          onChangeText={setServingGrams}
-          keyboardType="numeric"
-          placeholder="100"
-          placeholderTextColor={C.muted}
-        />
-
-        <View style={styles.servingSummary}>
-          <Text style={styles.servingLine}>For {servingSizeNum}g serving:</Text>
-          <Text style={styles.servingLine}>{perServing.calories} calories</Text>
-          <Text style={styles.servingLine}>{perServing.sugar}g sugar • {perServing.salt}g salt • {perServing.fat}g fat</Text>
-          <Text style={styles.servingLine}>{perServing.protein}g protein • {perServing.fiber}g fiber • {perServing.carbs}g carbs</Text>
-          {servingPctOfDaily !== null ? (
-            <Text style={styles.servingPill}>This is {servingPctOfDaily}% of your daily calorie limit</Text>
-          ) : null}
-        </View>
-      </View>
-
-      <View style={styles.flagsRow}>
-        <View style={[styles.flagPill, { backgroundColor: ingredientRisk.bg, borderColor: C.border }]}>
-          <Text style={[styles.flagText, { color: ingredientRisk.fg }]}>{ingredientRisk.icon} Ingredients: {ingredientRisk.text}</Text>
-        </View>
-        <View style={[styles.flagPill, { backgroundColor: additiveList.length ? C.amberLight : C.sageLight, borderColor: C.border }]}>
-          <Text style={[styles.flagText, { color: additiveList.length ? '#7a4a0a' : '#1e5222' }]}>
-            {additiveList.length ? '⚡' : '✅'} Additives: {additiveList.length ? additiveList.length : 0}
+        {/* Verdict Banner */}
+        <View style={[styles.verdictBanner, { backgroundColor: decisionMeta.bg, borderColor: decisionMeta.border }]}>
+          <View style={styles.verdictHeader}>
+            <Ionicons name={decisionMeta.icon} size={22} color={decisionMeta.fg} style={{ marginRight: 6 }} />
+            <Text style={[styles.verdictTitle, { color: decisionMeta.fg }]}>{decisionMeta.text}</Text>
+            {healthScore !== undefined && healthScore !== null ? (
+              <View style={styles.scoreBadge}>
+                <Text style={styles.scoreBadgeText}>Score: {healthScore}/100</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={[styles.verdictReason, { color: decisionMeta.fg }]}>
+            {verdictReason || 'Verdict calculated from ingredient profiles and macro balance.'}
           </Text>
         </View>
-      </View>
 
-      <View style={styles.adviceBox}>
-        <Text style={styles.adviceKicker}>💡 PERSONALISED ADVICE</Text>
-        {friendlyDietNote ? <Text style={styles.dietNoteText}>{friendlyDietNote}</Text> : null}
-        <Text style={styles.adviceText}>{adviceText}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <TouchableOpacity style={styles.accordionHeader} onPress={() => {
-          if (!explain && barcode && String(barcode) !== '00000000') loadExplain();
-          setShowBreakdown((v) => !v);
-        }}>
-          <Text style={styles.cardTitle}>See Score Breakdown</Text>
-          <Text style={styles.chevron}>{showBreakdown ? '▴' : '▾'}</Text>
-        </TouchableOpacity>
-
-        {loadingExplain ? (
-          <View style={{ marginTop: 10 }}>
-            <ActivityIndicator color={C.sage} />
+        {/* Serving Portion Calculator */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="calculator-outline" size={18} color={colors.emerald} style={{ marginRight: 6 }} />
+            <Text style={styles.cardTitle}>PORTION CALCULATOR</Text>
           </View>
-        ) : null}
+          <Text style={styles.cardSubtitle}>Select or type your planned serving size:</Text>
 
-        {showBreakdown ? (
-          <>
-            {explain && explain.score_calculation ? (
-              <Text style={styles.cardText}>Calculation: {explain.score_calculation}</Text>
+          {/* Quick Serving Chips */}
+          <View style={styles.portionChipsRow}>
+            {['50', '100', '150', '200', '250'].map((val) => (
+              <TouchableOpacity
+                key={val}
+                style={[styles.portionChip, servingGrams === val && styles.portionChipActive]}
+                onPress={() => setServingGrams(val)}
+              >
+                <Text style={[styles.portionChipText, servingGrams === val && styles.portionChipTextActive]}>
+                  {val}g
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.customInputRow}>
+            <Text style={styles.customInputLabel}>Custom (g):</Text>
+            <TextInput
+              style={styles.servingInput}
+              value={servingGrams}
+              onChangeText={setServingGrams}
+              keyboardType="numeric"
+              placeholder="100"
+              placeholderTextColor={colors.muted}
+            />
+          </View>
+
+          {/* Serving Output Highlight */}
+          <View style={styles.servingHighlightCard}>
+            <View style={styles.servingCalorieRow}>
+              <Text style={styles.servingCalorieNumber}>{perServing.calories}</Text>
+              <Text style={styles.servingCalorieUnit}>kcal in {servingSizeNum}g portion</Text>
+            </View>
+
+            <View style={styles.servingMacroRow}>
+              <Text style={styles.servingMacroText}>
+                {perServing.protein}g protein · {perServing.carbs}g carbs · {perServing.fat}g fat
+              </Text>
+              <Text style={styles.servingMinorText}>
+                {perServing.sugar}g sugar · {perServing.fiber}g fiber · {perServing.salt}g salt
+              </Text>
+            </View>
+
+            {servingPctOfDaily !== null ? (
+              <View style={styles.dailyPercentPill}>
+                <Ionicons name="pie-chart-outline" size={14} color={colors.emerald} style={{ marginRight: 4 }} />
+                <Text style={styles.dailyPercentText}>
+                  {servingPctOfDaily}% of your 2,000 kcal daily budget
+                </Text>
+              </View>
             ) : null}
+          </View>
+        </View>
 
-            {breakdownSteps.length > 0
-              ? breakdownSteps.map((s, idx) => {
-                  const impact = Number(s?.impact) || 0;
-                  const impactColor = impact >= 0 ? '#1e5222' : '#8c1a0a';
-                  const value = s?.value ?? s?.val;
-                  return (
-                    <View key={idx} style={styles.step}>
-                      <View style={styles.stepTopRow}>
-                        <Text style={styles.stepFactor} numberOfLines={2}>{String(s?.factor || 'Factor')}</Text>
-                        <Text style={[styles.stepImpact, { color: impactColor }]}>
-                          {impact >= 0 ? '+' : ''}{impact}
-                        </Text>
+        {/* Nutrition per 100g Progress Bars */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="stats-chart-outline" size={18} color={colors.emerald} style={{ marginRight: 6 }} />
+            <Text style={styles.cardTitle}>NUTRITION FACTS (PER 100g)</Text>
+          </View>
+          <NutrientBar label="Calories" value={nutrition.calories ?? 0} max={600} color={colors.emerald} unit="kcal" />
+          <NutrientBar label="Protein" value={nutrition.protein ?? 0} max={50} color={colors.protein} unit="g" />
+          <NutrientBar label="Carbohydrates" value={nutrition.carbs ?? 0} max={100} color={colors.carbs} unit="g" />
+          <NutrientBar label="Fat" value={nutrition.fat ?? 0} max={70} color={colors.fat} unit="g" />
+          <NutrientBar label="Sugar" value={nutrition.sugar ?? 0} max={50} color={colors.sugar} unit="g" />
+          <NutrientBar label="Fiber" value={nutrition.fiber ?? 0} max={30} color={colors.fiber} unit="g" />
+          <NutrientBar label="Salt" value={nutrition.salt ?? 0} max={10} color={colors.salt} unit="g" />
+        </View>
+
+        {/* Safety & Additives Badges */}
+        <SectionHeader>INGREDIENTS &amp; ADDITIVES</SectionHeader>
+        <View style={styles.flagsRow}>
+          <View style={[styles.flagPill, { backgroundColor: ingredientRisk.bg }]}>
+            <Ionicons name={ingredientRisk.icon} size={16} color={ingredientRisk.fg} style={{ marginRight: 4 }} />
+            <Text style={[styles.flagText, { color: ingredientRisk.fg }]}>
+              Ingredients: {ingredientRisk.text}
+            </Text>
+          </View>
+          <View style={[styles.flagPill, { backgroundColor: additiveList.length ? '#FEF3C7' : '#ECFDF5' }]}>
+            <Ionicons
+              name={additiveList.length ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+              size={16}
+              color={additiveList.length ? '#92400E' : '#065F46'}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.flagText, { color: additiveList.length ? '#92400E' : '#065F46' }]}>
+              Additives: {additiveList.length} detected
+            </Text>
+          </View>
+        </View>
+
+        {/* Personalized Nutrition Advice */}
+        <View style={styles.adviceBox}>
+          <View style={styles.adviceHeader}>
+            <Ionicons name="sparkles" size={16} color="#065F46" style={{ marginRight: 6 }} />
+            <Text style={styles.adviceKicker}>PERSONALIZED RECOMMENDATION</Text>
+          </View>
+          {friendlyDietNote ? (
+            <Text style={styles.dietNoteText}>{friendlyDietNote}</Text>
+          ) : null}
+          <Text style={styles.adviceText}>{adviceText}</Text>
+        </View>
+
+        {/* Score Breakdown Accordion */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.accordionHeader}
+            onPress={() => {
+              if (!explain && barcode && String(barcode) !== '00000000') loadExplain();
+              setShowBreakdown((v) => !v);
+            }}
+          >
+            <View style={styles.cardHeaderRow}>
+              <Ionicons name="help-buoy-outline" size={18} color={colors.emerald} style={{ marginRight: 6 }} />
+              <Text style={styles.cardTitle}>HOW THE SCORE WAS CALCULATED</Text>
+            </View>
+            <Ionicons
+              name={showBreakdown ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={colors.charcoal}
+            />
+          </TouchableOpacity>
+
+          {loadingExplain ? (
+            <View style={styles.loadingExplainWrap}>
+              <ActivityIndicator color={colors.emerald} />
+              <Text style={styles.loadingExplainText}>Loading calculation steps...</Text>
+            </View>
+          ) : null}
+
+          {showBreakdown ? (
+            <View style={styles.breakdownContent}>
+              {explain && explain.score_calculation ? (
+                <Text style={styles.calcFormulaText}>Calculation: {explain.score_calculation}</Text>
+              ) : null}
+
+              {breakdownSteps.length > 0
+                ? breakdownSteps.map((s, idx) => {
+                    const impact = Number(s?.impact) || 0;
+                    const isPositive = impact >= 0;
+                    const value = s?.value ?? s?.val;
+                    return (
+                      <View key={idx} style={styles.stepCard}>
+                        <View style={styles.stepTopRow}>
+                          <Text style={styles.stepFactor}>{String(s?.factor || 'Factor')}</Text>
+                          <View style={[styles.impactBadge, { backgroundColor: isPositive ? '#ECFDF5' : '#FEE2E2' }]}>
+                            <Text style={[styles.impactText, { color: isPositive ? '#065F46' : '#991B1B' }]}>
+                              {isPositive ? '+' : ''}{impact}
+                            </Text>
+                          </View>
+                        </View>
+                        {value !== undefined && value !== null && String(value).length ? (
+                          <Text style={styles.stepValue}>Measured: {String(value)}</Text>
+                        ) : null}
+                        {s?.reason ? <Text style={styles.stepText}>{String(s.reason)}</Text> : null}
                       </View>
-                      {value !== undefined && value !== null && String(value).length ? (
-                        <Text style={styles.stepValue}>Value: {String(value)}</Text>
-                      ) : null}
-                      {s?.reason ? <Text style={styles.stepText}>{String(s.reason)}</Text> : null}
+                    );
+                  })
+                : null}
+
+              {breakdownSteps.length === 0 && fallbackReasons.length > 0
+                ? fallbackReasons.map((r, idx) => (
+                    <View key={idx} style={styles.stepCard}>
+                      <Text style={styles.stepFactor}>Reason {idx + 1}</Text>
+                      <Text style={styles.stepText}>{String(r)}</Text>
                     </View>
-                  );
-                })
-              : null}
+                  ))
+                : null}
 
-            {breakdownSteps.length === 0 && fallbackReasons.length > 0
-              ? fallbackReasons.map((r, idx) => (
-                  <View key={idx} style={styles.step}>
-                    <Text style={styles.stepTitle}>Reason</Text>
-                    <Text style={styles.stepText}>{String(r)}</Text>
-                  </View>
-                ))
-              : null}
+              {breakdownSteps.length === 0 && fallbackReasons.length === 0 && !loadingExplain ? (
+                <Text style={styles.cardText}>No extra breakdown steps available for this product.</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
 
-            {breakdownSteps.length === 0 && fallbackReasons.length === 0 && !loadingExplain ? (
-              <Text style={styles.cardText}>No breakdown available for this scan.</Text>
-            ) : null}
-          </>
-        ) : null}
-      </View>
-
-      <TouchableOpacity
-        style={styles.inkBtn}
-        onPress={() => {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Main' }],
-          });
-        }}
-      >
-        <Text style={styles.inkBtnText}>Scan Another</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Scan Another Button */}
+        <PrimaryButton
+          onPress={() => {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Main' }],
+            });
+          }}
+          icon={<Ionicons name="barcode-outline" size={18} color={colors.white} />}
+          style={{ marginTop: spacing.lg }}
+        >
+          SCAN ANOTHER FOOD
+        </PrimaryButton>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.cream },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: C.ink },
-  headerBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: C.white, borderWidth: 1, borderColor: C.border },
-  headerBtnText: { fontSize: 16, fontWeight: '900', color: C.ink },
-  headerHomeText: { fontSize: 14, fontWeight: '900', color: C.ink },
-  productCard: { backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  productEmojiCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: C.sageLight, alignItems: 'center', justifyContent: 'center' },
-  productEmoji: { fontSize: 24 },
-  productName: { fontSize: 18, fontWeight: '900', color: C.ink },
-  productBrand: { marginTop: 4, color: C.muted, fontWeight: '600' },
-
-  verdictBanner: { marginTop: 12, borderRadius: 16, borderWidth: 1, padding: 14 },
-  verdictTitle: { fontSize: 16, fontWeight: '900' },
-  verdictReason: { marginTop: 6, fontWeight: '700' },
-
-  card: { marginTop: 12, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
-  cardTitle: { fontSize: 16, fontWeight: '900', color: C.ink },
-  cardText: { color: C.muted, fontWeight: '600', marginTop: 8 },
-  servingInput: { marginTop: 10, backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, paddingVertical: 11, paddingHorizontal: 14, color: C.ink, fontWeight: '800' },
-  servingSummary: { marginTop: 12, backgroundColor: C.cream, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 12 },
-  servingLine: { color: C.ink, fontWeight: '800', marginTop: 4 },
-  servingPill: { marginTop: 10, color: '#1e5222', fontWeight: '900' },
-
-  nRow: { marginTop: 12 },
-  nRowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  nLabel: { color: C.ink, fontWeight: '800' },
-  nValue: { color: C.muted, fontWeight: '800' },
-  nBarBg: { height: 8, backgroundColor: C.white, borderRadius: 999, overflow: 'hidden', borderWidth: 1, borderColor: C.border, marginTop: 8 },
-  nBarFill: { height: 8, borderRadius: 999 },
-
-  flagsRow: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  flagPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
-  flagText: { fontWeight: '900' },
-
-  adviceBox: { marginTop: 12, backgroundColor: C.sageLight, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14 },
-  adviceKicker: { color: '#1e5222', fontWeight: '900' },
-  dietNoteText: { marginTop: 6, color: '#1e5222', fontWeight: '900' },
-  adviceText: { marginTop: 6, color: '#1e5222', fontWeight: '700' },
-
-  accordionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  chevron: { fontSize: 18, fontWeight: '900', color: C.ink },
-  step: { marginTop: 12, backgroundColor: C.white, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: C.border },
-  stepTitle: { fontWeight: '900', color: C.ink },
-  stepTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  stepFactor: { flex: 1, fontWeight: '900', color: C.ink },
-  stepImpact: { fontWeight: '900' },
-  stepValue: { marginTop: 6, color: C.muted, fontWeight: '800' },
-  stepText: { marginTop: 6, color: C.muted, fontWeight: '600' },
-
-  inkBtn: { marginTop: 14, backgroundColor: C.ink, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
-  inkBtnText: { color: C.white, fontWeight: '900', fontSize: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: colors.muted,
+    marginBottom: spacing.md,
+  },
+  topNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  navBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  navTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  productCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    ...shadows.sm,
+  },
+  productIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: colors.emeraldLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  productName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  productBrand: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  barcodeText: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  verdictBanner: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginVertical: spacing.sm,
+    ...shadows.sm,
+  },
+  verdictHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  verdictTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  scoreBadge: {
+    backgroundColor: colors.white,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  scoreBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  verdictReason: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: colors.textSecondary,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 4,
+    marginBottom: spacing.sm,
+  },
+  portionChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: spacing.sm,
+  },
+  portionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  portionChipActive: {
+    backgroundColor: colors.emeraldLight,
+    borderColor: colors.emerald,
+  },
+  portionChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  portionChipTextActive: {
+    color: colors.emerald,
+  },
+  customInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  customInputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    marginRight: 8,
+  },
+  servingInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.charcoal,
+    width: 80,
+  },
+  servingHighlightCard: {
+    backgroundColor: colors.emeraldLight,
+    borderRadius: 16,
+    padding: spacing.md,
+    marginTop: 4,
+  },
+  servingCalorieRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  servingCalorieNumber: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: colors.emerald,
+  },
+  servingCalorieUnit: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.emeraldDark,
+    marginLeft: 6,
+  },
+  servingMacroRow: {
+    marginTop: 6,
+  },
+  servingMacroText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.charcoal,
+  },
+  servingMinorText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  dailyPercentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    backgroundColor: colors.white,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  dailyPercentText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.emerald,
+  },
+  nRow: {
+    marginTop: 10,
+  },
+  nRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  nLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.charcoal,
+  },
+  nValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  nUnit: {
+    fontSize: 11,
+    color: colors.muted,
+  },
+  nBarBg: {
+    height: 7,
+    backgroundColor: colors.surface,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 5,
+  },
+  nBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  flagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.xs,
+  },
+  flagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  flagText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  adviceBox: {
+    backgroundColor: colors.emeraldLight,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    padding: spacing.md,
+    marginVertical: spacing.sm,
+  },
+  adviceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  adviceKicker: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    color: colors.emeraldDark,
+  },
+  dietNoteText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+    marginTop: 4,
+  },
+  adviceText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#065F46',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  loadingExplainWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    gap: 8,
+  },
+  loadingExplainText: {
+    fontSize: 13,
+    color: colors.muted,
+  },
+  breakdownContent: {
+    marginTop: spacing.md,
+  },
+  calcFormulaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    marginBottom: 8,
+  },
+  stepCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 8,
+  },
+  stepTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  stepFactor: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.charcoal,
+    flex: 1,
+  },
+  impactBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  impactText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  stepValue: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  stepText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  cardText: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 6,
+  },
 });
+

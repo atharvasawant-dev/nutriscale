@@ -1,34 +1,44 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { analyzeManualProduct } from '../services/api';
 import { logFoodEntry } from '../services/foodLog';
+import { colors, spacing, typography } from '../theme';
 
-const C = {
-  cream: '#F5F2EC',
-  ink: '#1A1A17',
-  sage: '#4E8C52',
-  sageLight: '#C3D9C5',
-  amberLight: '#F0D9A8',
-  redLight: '#F0C8C0',
-  border: '#DDD8CE',
-  muted: '#888179',
-  white: '#FFFFFF',
-  red: '#B83C28',
-};
+const C = colors;
 
-function NumInput({ label, value, onChangeText }) {
+function NumInput({ label, unit, icon, color, value, onChangeText }) {
   return (
     <View style={styles.gridItem}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        keyboardType="numeric"
-        placeholder="0"
-        placeholderTextColor={C.muted}
-      />
+      <View style={styles.inputHeader}>
+        <View style={styles.inputLabelRow}>
+          <View style={[styles.inputDot, { backgroundColor: color || C.emerald }]} />
+          <Text style={styles.inputLabel}>{label}</Text>
+        </View>
+        <Text style={styles.unitBadge}>{unit}</Text>
+      </View>
+      <View style={styles.inputWrapper}>
+        <TextInput
+          style={styles.numInput}
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType="numeric"
+          placeholder="0"
+          placeholderTextColor={C.muted}
+        />
+      </View>
     </View>
   );
 }
@@ -79,7 +89,7 @@ export default function ManualEntryScreen({ navigation, route }) {
 
   const onSubmit = async () => {
     if (!payload.product_name) {
-      Alert.alert('Missing product name', 'Product name is required.');
+      Alert.alert('Missing product name', 'Please provide a product name before analyzing.');
       return;
     }
 
@@ -123,7 +133,7 @@ export default function ManualEntryScreen({ navigation, route }) {
           productName || 'Manual Entry',
           parseFloat(result?.product?.nutrition?.calories || calories) || 0
         ).catch(() => {});
-      } catch (e) {
+      } catch (_e) {
         // ignore
       }
 
@@ -137,70 +147,391 @@ export default function ManualEntryScreen({ navigation, route }) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-      <Text style={styles.title}>Enter Nutrition Details</Text>
-      <Text style={styles.subtitle}>Product not found? Enter the values from the nutrition label</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Product name</Text>
-        <TextInput
-          style={styles.input}
-          value={productName}
-          onChangeText={setProductName}
-          placeholder="e.g. Sprite"
-          placeholderTextColor={C.muted}
-        />
-
-        <View style={styles.grid}>
-          <NumInput label="Calories (kcal)" value={calories} onChangeText={setCalories} />
-          <NumInput label="Fat (g)" value={fat} onChangeText={setFat} />
-          <NumInput label="Sugar (g)" value={sugar} onChangeText={setSugar} />
-          <NumInput label="Salt (g)" value={salt} onChangeText={setSalt} />
-          <NumInput label="Protein (g)" value={protein} onChangeText={setProtein} />
-          <NumInput label="Fiber (g)" value={fiber} onChangeText={setFiber} />
-          <NumInput label="Carbs (g)" value={carbs} onChangeText={setCarbs} />
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Navigation Bar */}
+        <View style={styles.navBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={C.charcoal} />
+          </Pressable>
+          <View style={styles.badgePill}>
+            <Ionicons name="create-outline" size={14} color={C.emerald} />
+            <Text style={styles.badgePillText}>MANUAL ENTRY</Text>
+          </View>
         </View>
 
-        <TouchableOpacity style={styles.btn} onPress={onSubmit} disabled={loading}>
-          {loading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={C.white} />
-              <Text style={styles.btnText}>Analysing…</Text>
-            </View>
-          ) : (
-            <Text style={styles.btnText}>ANALYSE</Text>
-          )}
-        </TouchableOpacity>
+        <Text style={styles.title}>Nutrition Details</Text>
+        <Text style={styles.subtitle}>
+          Enter the values from your food label or packaging per serving / 100g.
+        </Text>
 
-        <TouchableOpacity
-          style={styles.ghostBtn}
-          onPress={() => navigation.goBack()}
-          disabled={loading}
-        >
-          <Text style={styles.ghostBtnText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+        {/* Form Container */}
+        <View style={styles.formCard}>
+          {/* Product Name Input */}
+          <View style={styles.fieldSection}>
+            <Text style={styles.fieldLabel}>FOOD OR PRODUCT NAME</Text>
+            <View style={styles.nameInputContainer}>
+              <Ionicons name="fast-food-outline" size={18} color={C.muted} style={styles.nameIcon} />
+              <TextInput
+                style={styles.nameInput}
+                value={productName}
+                onChangeText={setProductName}
+                placeholder="e.g. Greek Yogurt, Sprite, Oat Milk"
+                placeholderTextColor={C.muted}
+              />
+              {productName.length > 0 && (
+                <Pressable onPress={() => setProductName('')}>
+                  <Ionicons name="close-circle" size={18} color={C.muted} />
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          {/* Calorie Spotlight */}
+          <View style={styles.calorieSection}>
+            <View style={styles.calorieHeader}>
+              <View style={styles.inputLabelRow}>
+                <Ionicons name="flame" size={18} color={C.macroCalories || '#F97316'} />
+                <Text style={styles.calorieLabel}>ENERGY / CALORIES</Text>
+              </View>
+              <Text style={styles.unitBadge}>kcal</Text>
+            </View>
+            <TextInput
+              style={styles.calorieInput}
+              value={calories}
+              onChangeText={setCalories}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={C.muted}
+            />
+          </View>
+
+          {/* Macro Grid */}
+          <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>MACRONUTRIENTS</Text>
+          <View style={styles.grid}>
+            <NumInput
+              label="Protein"
+              unit="g"
+              color={C.macroProtein || '#3B82F6'}
+              value={protein}
+              onChangeText={setProtein}
+            />
+            <NumInput
+              label="Carbohydrates"
+              unit="g"
+              color={C.macroCarbs || '#F59E0B'}
+              value={carbs}
+              onChangeText={setCarbs}
+            />
+            <NumInput
+              label="Total Fat"
+              unit="g"
+              color={C.macroFat || '#EF4444'}
+              value={fat}
+              onChangeText={setFat}
+            />
+            <NumInput
+              label="Dietary Fiber"
+              unit="g"
+              color={C.macroFiber || '#10B981'}
+              value={fiber}
+              onChangeText={setFiber}
+            />
+            <NumInput
+              label="Sugars"
+              unit="g"
+              color={C.macroSugar || '#EC4899'}
+              value={sugar}
+              onChangeText={setSugar}
+            />
+            <NumInput
+              label="Sodium / Salt"
+              unit="g"
+              color={C.macroSalt || '#6B7280'}
+              value={salt}
+              onChangeText={setSalt}
+            />
+          </View>
+
+          {/* Action Buttons */}
+          <TouchableOpacity
+            style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
+            onPress={onSubmit}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={C.white} size="small" />
+                <Text style={styles.primaryBtnText}>Analyzing Nutrition…</Text>
+              </View>
+            ) : (
+              <View style={styles.btnContentRow}>
+                <Ionicons name="sparkles-outline" size={18} color={C.white} />
+                <Text style={styles.primaryBtnText}>ANALYZE NUTRITION</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => navigation.goBack()}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.cream },
-  title: { fontSize: 28, fontWeight: '900', color: C.ink },
-  subtitle: { marginTop: 6, color: C.muted, fontWeight: '600', marginBottom: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: C.background,
+  },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.surfaceCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    shadowColor: C.shadows.sm.shadowColor,
+    shadowOffset: C.shadows.sm.shadowOffset,
+    shadowOpacity: C.shadows.sm.shadowOpacity,
+    shadowRadius: C.shadows.sm.shadowRadius,
+    elevation: 2,
+  },
+  backBtnPressed: {
+    backgroundColor: C.surfaceSelected,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.emeraldSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  badgePillText: {
+    color: C.emerald,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  title: {
+    ...typography.hero,
+    fontSize: 28,
+    color: C.charcoal,
+    marginTop: spacing.xs,
+  },
+  subtitle: {
+    color: C.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+  },
 
-  card: { backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
+  // Form Container
+  formCard: {
+    backgroundColor: C.surfaceCard,
+    borderRadius: 20,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    shadowColor: C.shadows.sm.shadowColor,
+    shadowOffset: C.shadows.sm.shadowOffset,
+    shadowOpacity: C.shadows.sm.shadowOpacity,
+    shadowRadius: C.shadows.sm.shadowRadius,
+    elevation: 2,
+  },
 
-  label: { color: C.ink, fontWeight: '900', marginTop: 10, marginBottom: 6 },
-  input: { backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, paddingVertical: 11, paddingHorizontal: 14, color: C.ink, fontWeight: '700' },
+  fieldSection: {
+    marginBottom: spacing.md,
+  },
+  fieldLabel: {
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
+  },
+  nameInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.borderLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  nameIcon: {
+    marginRight: 8,
+  },
+  nameInput: {
+    flex: 1,
+    paddingVertical: 10,
+    color: C.charcoal,
+    fontSize: 15,
+    fontWeight: '700',
+  },
 
-  grid: { marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  gridItem: { width: '48%' },
+  // Calorie Highlight Box
+  calorieSection: {
+    backgroundColor: C.amberSoft || '#FEF3C7',
+    borderRadius: 14,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+  },
+  calorieHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  calorieLabel: {
+    color: '#B45309',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginLeft: 6,
+  },
+  calorieInput: {
+    backgroundColor: C.surfaceCard,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 20,
+    fontWeight: '900',
+    color: C.charcoal,
+  },
 
-  btn: { marginTop: 16, backgroundColor: C.sage, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
-  btnText: { color: C.white, fontWeight: '900', fontSize: 16, letterSpacing: 0.6 },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Nutrient Grid
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: spacing.xs,
+  },
+  gridItem: {
+    width: '48%',
+    backgroundColor: C.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    padding: spacing.sm,
+  },
+  inputHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  inputLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inputDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  inputLabel: {
+    color: C.charcoal,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  unitBadge: {
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  inputWrapper: {},
+  numInput: {
+    backgroundColor: C.surfaceCard,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.charcoal,
+  },
 
-  ghostBtn: { marginTop: 10, backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, paddingVertical: 12, alignItems: 'center' },
-  ghostBtnText: { color: C.ink, fontWeight: '900' },
+  // Action Buttons
+  primaryBtn: {
+    marginTop: spacing.xl,
+    backgroundColor: C.emerald,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.emerald,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  primaryBtnDisabled: {
+    opacity: 0.6,
+  },
+  btnContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  primaryBtnText: {
+    color: C.white,
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 0.6,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cancelBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.borderLight,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: C.textSecondary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

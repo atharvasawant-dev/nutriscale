@@ -1,30 +1,22 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { getNetworkErrorMessage, login, register } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-
-const C = {
-  cream: '#F5F2EC',
-  ink: '#1A1A17',
-  sage: '#4E8C52',
-  sageLight: '#C3D9C5',
-  amberLight: '#F0D9A8',
-  redLight: '#F0C8C0',
-  border: '#DDD8CE',
-  muted: '#888179',
-  white: '#FFFFFF',
-  red: '#B83C28',
-};
+import { colors, shadows, spacing, typography } from '../theme';
+import PrimaryButton from '../components/PrimaryButton';
 
 export default function LoginScreen() {
   const { login: authLogin } = useAuth();
@@ -33,10 +25,11 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {
-      Alert.alert('Missing info', 'Email and password are required');
+      Alert.alert('Required information', 'Please enter your email and password.');
       return;
     }
 
@@ -51,190 +44,253 @@ export default function LoginScreen() {
 
       const token = data?.access_token;
       if (!token) {
-        Alert.alert('Error', 'No token returned from server');
+        Alert.alert('Authentication error', 'No token returned from server.');
         return;
       }
       await authLogin(token);
     } catch (e) {
-      console.log('Login/Register failed:', e);
-      console.log('Response data:', e?.response?.data);
-      const msg = getNetworkErrorMessage(e) || 'Login failed';
-      Alert.alert('Error', String(msg));
+      const msg = getNetworkErrorMessage(e) || 'Authentication failed. Please check your credentials.';
+      Alert.alert('Unable to authenticate', String(msg));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={styles.kb}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Text style={styles.heroTitle}>FoodScanner AI</Text>
-        <Text style={styles.heroSubtitle}>Scan smarter. Eat healthier.</Text>
-
-        <View style={styles.card}>
-          <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, mode === 'login' && styles.toggleBtnActive]}
-              onPress={() => setMode('login')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, mode === 'login' && styles.toggleTextActive]}>Login</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, mode === 'register' && styles.toggleBtnActive]}
-              onPress={() => setMode('register')}
-              disabled={loading}
-            >
-              <Text style={[styles.toggleText, mode === 'register' && styles.toggleTextActive]}>Register</Text>
-            </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Brand Header */}
+          <View style={styles.brandContainer}>
+            <View style={styles.logoCircle}>
+              <Ionicons name="nutrition" size={36} color={colors.white} />
+            </View>
+            <Text style={styles.heroTitle}>NutriScale</Text>
+            <Text style={styles.heroSubtitle}>
+              Smart food intelligence for measured portions
+            </Text>
           </View>
 
-          {mode === 'register' ? (
+          {/* Form Card */}
+          <View style={styles.card}>
+            {/* Segmented Switcher */}
+            <View style={styles.toggleRow}>
+              <TouchableOpacity
+                style={[styles.toggleBtn, mode === 'login' && styles.toggleBtnActive]}
+                onPress={() => setMode('login')}
+                disabled={loading}
+              >
+                <Text style={[styles.toggleText, mode === 'login' && styles.toggleTextActive]}>
+                  Sign In
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleBtn, mode === 'register' && styles.toggleBtnActive]}
+                onPress={() => setMode('register')}
+                disabled={loading}
+              >
+                <Text style={[styles.toggleText, mode === 'register' && styles.toggleTextActive]}>
+                  Register
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Name Input (Register mode) */}
+            {mode === 'register' ? (
+              <View style={styles.inputWrap}>
+                <Ionicons name="person-outline" size={20} color={colors.muted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your Full Name"
+                  placeholderTextColor={colors.muted}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  editable={!loading}
+                />
+              </View>
+            ) : null}
+
+            {/* Email Input */}
             <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={20} color={colors.muted} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Name"
-                placeholderTextColor="#777"
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
+                placeholder="Email address"
+                placeholderTextColor={colors.muted}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
                 editable={!loading}
               />
             </View>
-          ) : null}
 
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor="#777"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!loading}
-            />
-          </View>
+            {/* Password Input */}
+            <View style={styles.inputWrap}>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.muted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={colors.muted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                editable={!loading}
+              />
+              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={colors.muted}
+                />
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#777"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!loading}
-            />
-          </View>
+            {/* Submit Button */}
+            <PrimaryButton
+              onPress={onSubmit}
+              disabled={loading}
+              loading={loading}
+              icon={
+                <Ionicons
+                  name={mode === 'login' ? 'log-in-outline' : 'person-add-outline'}
+                  size={18}
+                  color={colors.white}
+                />
+              }
+              style={{ marginTop: spacing.lg }}
+            >
+              {mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+            </PrimaryButton>
 
-          <TouchableOpacity style={styles.submitBtn} onPress={onSubmit} disabled={loading}>
-            <Text style={styles.submitText}>
-              {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create account'}
+            <Text style={styles.note}>
+              {mode === 'login'
+                ? 'Sign in to access your scanned food history and smart goals.'
+                : 'Create your account to start measuring and tracking food.'}
             </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.note}>
-            Create an account or sign in to start scanning.
-          </Text>
-        </View>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: C.cream,
+    backgroundColor: colors.background,
+    minHeight: Platform.OS === 'web' ? '100vh' : undefined,
   },
   kb: {
+    flex: 1,
+    minHeight: Platform.OS === 'web' ? '100vh' : undefined,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    maxWidth: 440,
     width: '100%',
     alignSelf: 'center',
-    maxWidth: 420,
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  logoCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 22,
+    backgroundColor: colors.emerald,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+    ...shadows.md,
   },
   heroTitle: {
-    color: C.ink,
-    fontSize: 34,
-    fontWeight: '900',
+    ...typography.hero,
+    color: colors.charcoal,
     textAlign: 'center',
-    letterSpacing: 0.3,
   },
   heroSubtitle: {
-    color: C.muted,
+    ...typography.subtitle,
+    color: colors.muted,
     textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 18,
-    fontSize: 14,
-    letterSpacing: 0.2,
+    marginTop: 4,
+    maxWidth: 280,
   },
   card: {
-    backgroundColor: C.white,
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: spacing.xl,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
+    ...shadows.lg,
   },
   toggleRow: {
     flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: 'transparent',
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: spacing.md,
   },
   toggleBtn: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: 10,
   },
   toggleBtnActive: {
-    backgroundColor: C.ink,
+    backgroundColor: colors.white,
+    ...shadows.sm,
   },
   toggleText: {
-    fontWeight: '800',
-    color: C.ink,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.muted,
   },
   toggleTextActive: {
-    color: C.white,
+    color: colors.emerald,
+    fontWeight: '800',
   },
   inputWrap: {
-    backgroundColor: C.white,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    height: 52,
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   input: {
-    color: C.ink,
+    flex: 1,
+    height: '100%',
+    color: colors.charcoal,
+    fontSize: 15,
     fontWeight: '600',
   },
-  submitBtn: {
-    marginTop: 16,
-    backgroundColor: C.ink,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  submitText: {
-    color: C.white,
-    fontWeight: '900',
-    fontSize: 16,
-    letterSpacing: 0.6,
+  eyeBtn: {
+    padding: 6,
   },
   note: {
-    marginTop: 12,
-    color: C.muted,
+    marginTop: spacing.md,
+    color: colors.muted,
     fontSize: 12,
     textAlign: 'center',
+    lineHeight: 18,
   },
 });
+

@@ -22,6 +22,7 @@ class User(Base):
 
     scan_history: Mapped[list["ScanHistory"]] = relationship("ScanHistory", back_populates="user")
     food_logs: Mapped[list["FoodLog"]] = relationship("FoodLog", back_populates="user")
+    scan_sessions: Mapped[list["ScanSession"]] = relationship("ScanSession", back_populates="user")
 
 
 class Product(Base):
@@ -74,6 +75,41 @@ class ScanHistory(Base):
     user: Mapped[User] = relationship("User", back_populates="scan_history")
 
 
+class ScanSession(Base):
+    __tablename__ = "scan_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    barcode: Mapped[str] = mapped_column(String, nullable=False)
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    user: Mapped[User] = relationship("User", back_populates="scan_sessions")
+    product: Mapped[Product | None] = relationship("Product")
+    measurement: Mapped["PortionMeasurement | None"] = relationship(
+        "PortionMeasurement", back_populates="scan_session", uselist=False,
+        cascade="all, delete-orphan",
+    )
+    food_log: Mapped["FoodLog | None"] = relationship("FoodLog", back_populates="scan_session", uselist=False)
+
+
+class PortionMeasurement(Base):
+    __tablename__ = "portion_measurements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_session_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("scan_sessions.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    weight_grams: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    stability: Mapped[str] = mapped_column(String, nullable=False, default="stable")
+    measured_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    scan_session: Mapped[ScanSession] = relationship("ScanSession", back_populates="measurement")
+
+
 class FoodLog(Base):
     __tablename__ = "daily_food_log"
 
@@ -88,6 +124,11 @@ class FoodLog(Base):
     protein: Mapped[float | None] = mapped_column(Float, nullable=True)
     fiber: Mapped[float | None] = mapped_column(Float, nullable=True)
     carbs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scan_session_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("scan_sessions.id"), nullable=True, unique=True
+    )
+    weight_grams: Mapped[float | None] = mapped_column(Float, nullable=True)
     consumed_at: Mapped[str] = mapped_column(String, nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="food_logs")
+    scan_session: Mapped[ScanSession | None] = relationship("ScanSession", back_populates="food_log")

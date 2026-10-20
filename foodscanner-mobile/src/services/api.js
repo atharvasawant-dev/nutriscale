@@ -140,6 +140,19 @@ export async function scanProduct(barcode, productName) {
   return res.data;
 }
 
+export async function measurePortion(sessionId, weightGrams) {
+  const res = await client.post(`/scan-sessions/${sessionId}/measurement`, {
+    weight_grams: weightGrams,
+    source: 'mock',
+  });
+  return res.data;
+}
+
+export async function savePortion(sessionId) {
+  const res = await client.post(`/scan-sessions/${sessionId}/save`);
+  return res.data;
+}
+
 export async function searchProduct(query) {
   const res = await client.get('/search', { params: { query } });
   return res.data;

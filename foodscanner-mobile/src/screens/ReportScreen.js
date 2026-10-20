@@ -1,149 +1,420 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
-import { getDailyReport, getWeeklyReport } from '../services/api';
-import { resetToLogin } from '../utils/navigationRef';
+import { getHistory, getTodayFoods } from '../services/api';
+import PrimaryButton from '../components/PrimaryButton';
+import SectionHeader from '../components/SectionHeader';
+import { colors, shadows, spacing, typography } from '../theme';
 
-const C = {
-  cream: '#F5F2EC',
-  ink: '#1A1A17',
-  sage: '#4E8C52',
-  sageLight: '#C3D9C5',
-  amberLight: '#F0D9A8',
-  redLight: '#F0C8C0',
-  border: '#DDD8CE',
-  muted: '#888179',
-  white: '#FFFFFF',
-  red: '#B83C28',
-};
+function formatValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, '');
+}
 
-function Bar({ label, consumed, limit }) {
-  const pct = limit ? Math.min(100, (consumed / limit) * 100) : 0;
-  const ratio = limit ? consumed / limit : 0;
-  const color = ratio <= 0.8 ? C.sage : ratio <= 1 ? '#A9731B' : C.red;
+function parseDate(value) {
+  if (!value) return null;
+  const normalized = String(value).replace(' ', 'T');
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateKey(value) {
+  const date = parseDate(value);
+  return date ? date.toISOString().slice(0, 10) : '';
+}
+
+function dayLabel(value) {
+  const date = parseDate(value);
+  if (!date) return 'OLDER DATES';
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const key = dateKey(value);
+
+  if (key === todayKey) return 'TODAY';
+  if (key === yesterdayKey) return 'YESTERDAY';
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+}
+
+function PortionEntry({ item }) {
+  const name = item.product_name || item.name || item.product || 'Saved food';
+  const calories = Number(item.calories);
+  const hasWeight = Number.isFinite(Number(item.weight_grams));
+  const timestamp = parseDate(item.consumed_at);
+
   return (
-    <View style={{ marginTop: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={styles.barLabel}>{label}</Text>
-        <Text style={styles.barMeta}>{Math.round(pct)}%</Text>
+    <View style={styles.entryCard}>
+      <View style={styles.entryIconWrap}>
+        <Ionicons name="restaurant-outline" size={20} color={colors.emerald} />
       </View>
-      <View style={styles.barBg}>
-        <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: color }]} />
+      <View style={styles.entryBody}>
+        <Text style={styles.entryName} numberOfLines={2}>{name}</Text>
+        <View style={styles.entryMetaRow}>
+          {hasWeight ? (
+            <Text style={styles.entryWeightText}>{formatValue(item.weight_grams)} g</Text>
+          ) : null}
+          {timestamp ? (
+            <View style={styles.timeWrap}>
+              <Ionicons name="time-outline" size={12} color={colors.muted} style={{ marginRight: 3 }} />
+              <Text style={styles.entryTime}>
+                {timestamp.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
-      <Text style={styles.barSub}>{consumed} / {limit}</Text>
+      <View style={styles.entryCalorieBadge}>
+        <Text style={styles.entryCalorieText}>
+          {Number.isFinite(calories) ? `${formatValue(calories)} kcal` : '—'}
+        </Text>
+      </View>
     </View>
   );
 }
 
-export default function ReportScreen() {
+export default function ReportScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
-  const [daily, setDaily] = useState(null);
-  const [weekly, setWeekly] = useState(null);
+  const [todayFoods, setTodayFoods] = useState([]);
+  const [legacyHistory, setLegacyHistory] = useState([]);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [d, w] = await Promise.all([getDailyReport(), getWeeklyReport()]);
-        setDaily(d);
-        setWeekly(w);
-      } catch (e) {
-        if (e?.response?.status === 401) {
-          resetToLogin();
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchHistory = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const [todayResponse, historyResponse] = await Promise.all([getTodayFoods(), getHistory()]);
+      setTodayFoods(Array.isArray(todayResponse?.foods) ? todayResponse.foods : []);
+      setLegacyHistory(Array.isArray(historyResponse) ? historyResponse : []);
+    } catch (_requestError) {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory();
+    }, [fetchHistory])
+  );
+
+  const groups = useMemo(() => {
+    const savedFoods = todayFoods
+      .filter((item) => item?.product_name || item?.name || item?.product)
+      .sort((left, right) => String(right?.consumed_at || '').localeCompare(String(left?.consumed_at || '')));
+    const grouped = new Map();
+    savedFoods.forEach((item) => {
+      const key = dateKey(item.consumed_at) || 'unknown';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(item);
+    });
+    return Array.from(grouped.entries()).map(([key, items]) => {
+      const totalDayCalories = items.reduce((sum, it) => sum + (Number(it.calories) || 0), 0);
+      return {
+        key,
+        label: dayLabel(items[0]?.consumed_at),
+        items,
+        totalCalories: totalDayCalories,
+      };
+    });
+  }, [todayFoods]);
+
+  const hasSavedFoods = groups.length > 0;
+  const hasLegacyHistory = legacyHistory.length > 0;
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={C.sage} />
-      </View>
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" color={colors.emerald} />
+      </SafeAreaView>
     );
   }
 
-  if (!daily || !weekly) {
+  if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={{ color: C.muted, fontWeight: '800' }}>Please log in again to see your report</Text>
-      </View>
+      <SafeAreaView style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.muted} style={{ marginBottom: 12 }} />
+        <Text style={styles.errorTitle}>Unable to load history</Text>
+        <Text style={styles.errorText}>Please check your connection and try again.</Text>
+        <PrimaryButton onPress={fetchHistory} style={{ marginTop: spacing.md }}>
+          TRY AGAIN
+        </PrimaryButton>
+      </SafeAreaView>
     );
   }
-
-  const rating = daily?.overall_rating || 'N/A';
-  const emoji = rating === 'GREAT' ? '🤩' : rating === 'GOOD' ? '🙂' : rating === 'FAIR' ? '😐' : '😟';
-
-  const ratingBg = rating === 'GREAT' ? C.sageLight : rating === 'GOOD' ? C.sageLight : rating === 'FAIR' ? C.amberLight : C.redLight;
-  const ratingFg = rating === 'FAIR' ? '#7a4a0a' : rating === 'POOR' ? '#8c1a0a' : '#1e5222';
-
-  const nb = daily?.nutrition_breakdown || {};
-  const days = weekly?.days || [];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-      <Text style={styles.screenTitle}>Health Report</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.eyebrowRow}>
+            <Ionicons name="calendar-outline" size={14} color={colors.emerald} style={{ marginRight: 6 }} />
+            <Text style={styles.eyebrow}>NUTRITION LOG</Text>
+          </View>
+          <Text style={styles.title}>Food History</Text>
+          <Text style={styles.subtitle}>A complete timeline of your measured portions and logged meals.</Text>
+        </View>
 
-      <View style={[styles.ratingCard, { backgroundColor: ratingBg, borderColor: C.border }]}>
-        <Text style={[styles.ratingTitle, { color: ratingFg }]}>{emoji} {rating}</Text>
-        <Text style={[styles.ratingMeta, { color: ratingFg }]}>Score: {daily?.overall_score ?? 0}/100</Text>
-      </View>
+        {!hasSavedFoods ? (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="fast-food-outline" size={32} color={colors.muted} />
+            </View>
+            <Text style={styles.emptyTitle}>No Meals Logged Yet</Text>
+            <Text style={styles.emptyCopy}>
+              Your saved portions and nutrition details will appear here after you scan and measure a food.
+            </Text>
+            <PrimaryButton
+              onPress={() => navigation.navigate('Main', { screen: 'Scan' })}
+              icon={<Ionicons name="scan-outline" size={18} color={colors.white} />}
+              style={{ marginTop: spacing.lg }}
+            >
+              SCAN &amp; MEASURE FIRST MEAL
+            </PrimaryButton>
+          </View>
+        ) : (
+          groups.map((group) => (
+            <View key={group.key} style={styles.groupContainer}>
+              <SectionHeader
+                rightAction={
+                  <View style={styles.daySummaryBadge}>
+                    <Text style={styles.daySummaryText}>
+                      {group.items.length} items · {formatValue(group.totalCalories)} kcal
+                    </Text>
+                  </View>
+                }
+              >
+                {group.label}
+              </SectionHeader>
 
-      <View style={styles.card}>
-        <Text style={styles.title}>Nutrition</Text>
-        {Object.keys(nb).map((k) => (
-          <Bar key={k} label={k} consumed={nb[k].consumed} limit={nb[k].limit} />
-        ))}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.title}>Suggestions</Text>
-        {(daily?.suggestions || []).map((s, idx) => (
-          <Text key={idx} style={styles.suggestion}>→ {s}</Text>
-        ))}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.title}>Weekly Trend</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingTop: 10 }}>
-          {days.map((d, idx) => {
-            const score = Number(d?.day_score) || 0;
-            const dot = score >= 70 ? C.sage : score >= 45 ? '#A9731B' : C.red;
-            return (
-              <View key={idx} style={styles.dayCard}>
-                <Text style={styles.dayDate}>{d.date}</Text>
-                <View style={[styles.dayDot, { backgroundColor: dot }]} />
-                <Text style={styles.dayScore}>{score}/100</Text>
+              <View style={styles.groupList}>
+                {group.items.map((item, index) => (
+                  <PortionEntry key={`${item.product_name}-${item.consumed_at || index}`} item={item} />
+                ))}
               </View>
-            );
-          })}
-        </ScrollView>
-        {weekly?.week_summary ? <Text style={styles.meta}>Trend: {weekly.week_summary.trend}</Text> : null}
-      </View>
-    </ScrollView>
+            </View>
+          ))
+        )}
+
+        {hasLegacyHistory ? (
+          <View style={styles.legacyCard}>
+            <View style={styles.legacyHeader}>
+              <Ionicons name="archive-outline" size={18} color={colors.muted} style={{ marginRight: 6 }} />
+              <Text style={styles.legacyTitle}>Previous Scans</Text>
+            </View>
+            <Text style={styles.legacyText}>
+              {legacyHistory.length} earlier item{legacyHistory.length === 1 ? '' : 's'} recorded in your historical scan archive.
+            </Text>
+          </View>
+        ) : null}
+
+        {hasSavedFoods && (
+          <PrimaryButton
+            onPress={() => navigation.navigate('Main', { screen: 'Scan' })}
+            icon={<Ionicons name="scan-outline" size={18} color={colors.white} />}
+            style={{ marginTop: spacing.md }}
+          >
+            SCAN &amp; MEASURE
+          </PrimaryButton>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.cream },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.cream },
-  screenTitle: { fontSize: 28, fontWeight: '900', color: C.ink, marginBottom: 12 },
-  ratingCard: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 14 },
-  ratingTitle: { fontSize: 18, fontWeight: '900' },
-  ratingMeta: { marginTop: 6, fontWeight: '800' },
-  card: { backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14 },
-  title: { fontSize: 16, fontWeight: '900', color: C.ink },
-  meta: { marginTop: 10, color: C.muted, fontWeight: '600' },
-  suggestion: { marginTop: 10, color: C.ink, fontWeight: '700' },
-  barLabel: { fontWeight: '800', color: C.ink },
-  barMeta: { color: C.muted, fontWeight: '800' },
-  barSub: { marginTop: 6, color: C.muted, fontWeight: '600' },
-  barBg: { height: 8, backgroundColor: C.white, borderRadius: 999, overflow: 'hidden', marginTop: 8, borderWidth: 1, borderColor: C.border },
-  barFill: { height: 8, borderRadius: 999 },
-  dayCard: { width: 110, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 12 },
-  dayDate: { color: C.muted, fontWeight: '700' },
-  dayDot: { width: 10, height: 10, borderRadius: 5, marginTop: 10 },
-  dayScore: { marginTop: 10, color: C.ink, fontWeight: '900' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  center: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  content: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  header: {
+    marginBottom: spacing.sm,
+  },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: colors.emerald,
+  },
+  title: {
+    ...typography.title,
+    color: colors.charcoal,
+    marginTop: 2,
+  },
+  subtitle: {
+    ...typography.subtitle,
+    color: colors.muted,
+    marginTop: 4,
+  },
+  groupContainer: {
+    marginBottom: spacing.md,
+  },
+  daySummaryBadge: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  daySummaryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  groupList: {
+    gap: 8,
+  },
+  entryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  entryIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: colors.emeraldLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  entryBody: {
+    flex: 1,
+  },
+  entryName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  entryMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 8,
+  },
+  entryWeightText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.emerald,
+  },
+  timeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  entryTime: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '500',
+  },
+  entryCalorieBadge: {
+    backgroundColor: colors.emeraldLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  entryCalorieText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.emerald,
+  },
+  emptyCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.lg,
+    ...shadows.sm,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  emptyCopy: {
+    fontSize: 13,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginTop: 4,
+    maxWidth: 280,
+  },
+  legacyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  legacyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  legacyTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  legacyText: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 18,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.muted,
+    marginTop: 4,
+    textAlign: 'center',
+  },
 });
+

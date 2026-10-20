@@ -65,6 +65,41 @@ def _ensure_users_goal_columns(conn: sqlite3.Connection) -> None:
             pass
 
 
+def _ensure_nutriscale_tables(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS scan_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            barcode TEXT NOT NULL,
+            product_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+        CREATE TABLE IF NOT EXISTS portion_measurements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_session_id INTEGER NOT NULL UNIQUE,
+            weight_grams REAL NOT NULL,
+            source TEXT NOT NULL,
+            stability TEXT NOT NULL DEFAULT 'stable',
+            measured_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (scan_session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
+        );
+        """
+    )
+    log_cols = {r[1] for r in conn.execute("PRAGMA table_info(daily_food_log)").fetchall()}
+    for column, definition in (
+        ("fat", "REAL"), ("sugar", "REAL"), ("salt", "REAL"),
+        ("protein", "REAL"), ("fiber", "REAL"), ("carbs", "REAL"),
+        ("scan_session_id", "INTEGER"), ("weight_grams", "REAL"),
+    ):
+        if column not in log_cols:
+            conn.execute(f"ALTER TABLE daily_food_log ADD COLUMN {column} {definition}")
+
+
 def run_migrations(engine) -> None:
     """Run database migrations safely."""
     try:
@@ -81,6 +116,17 @@ def run_migrations(engine) -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN goal_target_days INTEGER DEFAULT 30"))
             if "goal_started_at" not in cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN goal_started_at VARCHAR"))
+            for table, columns in {
+                "daily_food_log": {
+                    "fat": "FLOAT", "sugar": "FLOAT", "salt": "FLOAT",
+                    "protein": "FLOAT", "fiber": "FLOAT", "carbs": "FLOAT",
+                    "scan_session_id": "INTEGER", "weight_grams": "FLOAT",
+                },
+            }.items():
+                existing = {c["name"] for c in inspect(conn).get_columns(table)}
+                for name, column_type in columns.items():
+                    if name not in existing:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}"))
     except Exception as e:
         print(f"Migration failed: {e}")
         raise
@@ -111,6 +157,7 @@ def init_db(db_path: Path = DB_PATH, schema_path: Path = SCHEMA_PATH) -> None:
         _ensure_users_table(conn)
         _ensure_user_id_columns(conn)
         _ensure_users_goal_columns(conn)
+        _ensure_nutriscale_tables(conn)
         _ensure_default_user(conn)
         conn.commit()
     finally:

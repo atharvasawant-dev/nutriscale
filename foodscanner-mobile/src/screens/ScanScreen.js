@@ -1,23 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  Alert,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Ionicons } from '@expo/vector-icons';
 
 import { scanProduct } from '../services/api';
+import { colors, shadows, spacing, typography } from '../theme';
+import PrimaryButton from '../components/PrimaryButton';
+import SectionHeader from '../components/SectionHeader';
 
-const C = {
-  cream: '#F5F2EC',
-  ink: '#1A1A17',
-  sage: '#4E8C52',
-  sageLight: '#C3D9C5',
-  amberLight: '#F0D9A8',
-  redLight: '#F0C8C0',
-  border: '#DDD8CE',
-  muted: '#888179',
-  white: '#FFFFFF',
-  red: '#B83C28',
-};
-
-const QUICK = ['Maggi', 'Parle-G', 'Kurkure', "Lay's", 'Amul Butter'];
+const QUICK = [
+  { name: 'Maggi', icon: '🍜' },
+  { name: 'Parle-G', icon: '🍪' },
+  { name: 'Kurkure', icon: '🥨' },
+  { name: "Lay's", icon: '🥔' },
+  { name: 'Amul Butter', icon: '🧈' },
+];
 
 export default function ScanScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -28,13 +36,12 @@ export default function ScanScreen({ navigation }) {
   const [showCamera, setShowCamera] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const productNameRef = useRef(null);
-  const [result, setResult] = useState(null);
 
   const mainValue = barcode;
   const setMainValue = setBarcode;
 
-  const barcodePlaceholder = useMemo(() => 'Barcode number (e.g. 8901058000256)', []);
-  const namePlaceholder = useMemo(() => 'Product name for manual search (e.g. Dairy Milk)', []);
+  const barcodePlaceholder = useMemo(() => 'e.g. 8901058000256', []);
+  const namePlaceholder = useMemo(() => 'e.g. Dairy Milk, Maggi Noodles', []);
 
   useEffect(() => {
     if (!permission) return;
@@ -51,19 +58,20 @@ export default function ScanScreen({ navigation }) {
     const hasLetters = /[A-Za-z]/.test(raw);
     if (hasLetters) {
       Alert.alert(
-        'Barcode only',
-        'Please enter a barcode number only. Use the product name field below for name search.'
+        'Barcode format',
+        'Barcodes only contain numbers. To search by name, please use the product name field below.'
       );
       return;
     }
 
     if (!raw && !hint) {
+      Alert.alert('Product details needed', 'Please enter a barcode number or type a product name to analyze.');
       return;
     }
 
     const isDigits = /^\d+$/.test(raw);
     if (raw && !isDigits) {
-      Alert.alert('Invalid barcode', 'Enter barcode number or use chips below');
+      Alert.alert('Invalid barcode', 'Enter a numeric barcode or select one of the quick items below.');
       return;
     }
 
@@ -71,13 +79,11 @@ export default function ScanScreen({ navigation }) {
       ? { barcode: raw, product_name: hint || null }
       : { barcode: '00000000', product_name: hint };
 
-    setResult(null);
     setLoading(true);
     try {
       setNotFound(false);
       const result = await scanProduct(scanPayload.barcode, scanPayload.product_name);
-      setResult(result);
-      navigation.replace('Result', { result, timestamp: Date.now() });
+      navigation.replace('NutriScaleFlow', { result, timestamp: Date.now() });
     } catch (e) {
       const status = e?.response?.status;
       if (status === 404) {
@@ -88,7 +94,7 @@ export default function ScanScreen({ navigation }) {
         }, 50);
       } else {
         const msg = e?.response?.data?.detail || e?.message || 'Scan failed';
-        Alert.alert('Error', String(msg));
+        Alert.alert('Unable to analyze', String(msg));
       }
     } finally {
       setLoading(false);
@@ -104,57 +110,61 @@ export default function ScanScreen({ navigation }) {
     setTimeout(() => setScanned(false), 1500);
   };
 
-  if (!permission) {
-    return (
-      <View style={styles.center}>
-        <Text>Requesting camera permission...</Text>
-      </View>
-    );
-  }
+  const handleCameraToggle = async () => {
+    if (permission?.granted) {
+      setScanned(false);
+      setShowCamera(true);
+      return;
+    }
+
+    if (permission?.canAskAgain) {
+      const p = await requestPermission();
+      if (p?.granted) {
+        setScanned(false);
+        setShowCamera(true);
+      }
+      return;
+    }
+
+    Alert.alert('Camera permission', 'Camera permission is required to scan barcodes with your device camera.');
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-      <Text style={styles.title}>Check a Product</Text>
-      <Text style={styles.subtitle}>Enter barcode or product name</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.eyebrowRow}>
+            <Ionicons name="scan-outline" size={14} color={colors.emerald} style={{ marginRight: 6 }} />
+            <Text style={styles.eyebrow}>NUTRISCALE SCANNER</Text>
+          </View>
+          <Text style={styles.title}>Scan Your Food</Text>
+          <Text style={styles.subtitle}>
+            Identify any food item to automatically calculate its nutritional values based on portion weight.
+          </Text>
+        </View>
 
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={styles.cameraToggle}
-          onPress={async () => {
-            if (permission?.granted) {
-              setScanned(false);
-              setShowCamera(true);
-              return;
-            }
-
-            if (permission?.canAskAgain) {
-              const p = await requestPermission();
-              if (p?.granted) {
-                setScanned(false);
-                setShowCamera(true);
-              }
-              return;
-            }
-
-            Alert.alert('Camera permission required', 'Camera permission required');
-          }}
-          disabled={loading}
-        >
-          <Text style={styles.cameraToggleText}>📷 Scan Barcode</Text>
-        </TouchableOpacity>
-
-        {!permission?.granted && showCamera ? (
-          <Text style={styles.permissionText}>Camera permission required</Text>
-        ) : null}
-
+        {/* Camera Scanner View / Toggle Card */}
         {showCamera && permission?.granted ? (
           <View style={styles.cameraWrap}>
             <CameraView
               style={StyleSheet.absoluteFill}
               onBarcodeScanned={scanned ? undefined : onBarcodeScanned}
             />
+            {/* Viewfinder Target Graphic */}
+            <View style={styles.viewfinderContainer}>
+              <View style={styles.viewfinderCornerTopLeft} />
+              <View style={styles.viewfinderCornerTopRight} />
+              <View style={styles.viewfinderCornerBottomLeft} />
+              <View style={styles.viewfinderCornerBottomRight} />
+              <View style={styles.scanLaser} />
+            </View>
+
             <View style={styles.cameraOverlay}>
-              <Text style={styles.cameraHint}>Point your camera at the barcode</Text>
+              <View style={styles.cameraHintPill}>
+                <Ionicons name="barcode-outline" size={16} color={colors.white} style={{ marginRight: 6 }} />
+                <Text style={styles.cameraHint}>Align barcode within the frame</Text>
+              </View>
               <TouchableOpacity
                 style={styles.cancelBtn}
                 onPress={() => {
@@ -162,129 +172,492 @@ export default function ScanScreen({ navigation }) {
                   setScanned(false);
                 }}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Ionicons name="close" size={16} color={colors.charcoal} style={{ marginRight: 4 }} />
+                <Text style={styles.cancelBtnText}>Close Camera</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ) : null}
+        ) : (
+          <Pressable
+            style={({ pressed }) => [styles.cameraCard, pressed && styles.pressed]}
+            onPress={handleCameraToggle}
+            disabled={loading}
+          >
+            <View style={styles.cameraCardIconWrap}>
+              <Ionicons name="camera-outline" size={28} color={colors.emerald} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cameraCardTitle}>Open Camera Barcode Scanner</Text>
+              <Text style={styles.cameraCardSubtitle}>Tap to scan barcode with instant camera detection</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        )}
 
-        <TextInput
-          style={styles.input}
-          placeholder={barcodePlaceholder}
-          placeholderTextColor={C.muted}
-          value={mainValue}
-          onChangeText={setMainValue}
-          keyboardType="numeric"
-        />
+        {/* Input Card Container */}
+        <View style={styles.inputCard}>
+          <Text style={styles.inputSectionLabel}>ENTER DETAILS MANUALLY</Text>
 
-        {notFound ? (
-          <Text style={styles.notFoundText}>Product not found. Try typing the product name below 👇</Text>
-        ) : null}
+          {/* Barcode Input */}
+          <Text style={styles.fieldLabel}>BARCODE NUMBER</Text>
+          <View style={styles.inputWrapper}>
+            <Ionicons name="barcode-outline" size={20} color={colors.muted} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              placeholder={barcodePlaceholder}
+              placeholderTextColor={colors.muted}
+              value={mainValue}
+              onChangeText={setMainValue}
+              keyboardType="numeric"
+              returnKeyType="search"
+              onSubmitEditing={() => analyze()}
+            />
+            {mainValue.length > 0 && (
+              <TouchableOpacity onPress={() => setMainValue('')} style={styles.clearBtn}>
+                <Ionicons name="close-circle" size={18} color={colors.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
 
-        {notFound ? (
-          <TouchableOpacity
-            style={styles.manualBtn}
+          {/* Not Found Banner */}
+          {notFound ? (
+            <View style={styles.notFoundBanner}>
+              <Ionicons name="alert-circle-outline" size={18} color="#D97706" style={{ marginRight: 6 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.notFoundText}>
+                  Barcode not found in database. Type the product name below or enter nutrition directly:
+                </Text>
+                <TouchableOpacity
+                  style={styles.manualEntryLink}
+                  onPress={() => navigation.navigate('ManualEntry', { productName: productName.trim() || '' })}
+                  disabled={loading}
+                >
+                  <Text style={styles.manualEntryLinkText}>Enter Nutrition Manually ›</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Product Name Input */}
+          <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>OR SEARCH BY PRODUCT NAME</Text>
+          <View style={[styles.inputWrapper, notFound && styles.inputNotFound]}>
+            <Ionicons name="search-outline" size={20} color={colors.muted} style={styles.inputIcon} />
+            <TextInput
+              ref={productNameRef}
+              style={styles.textInput}
+              placeholder={namePlaceholder}
+              placeholderTextColor={colors.muted}
+              value={productName}
+              onChangeText={(t) => {
+                setProductName(t);
+                if (notFound) setNotFound(false);
+              }}
+              returnKeyType="search"
+              onSubmitEditing={() => analyze()}
+            />
+            {productName.length > 0 && (
+              <TouchableOpacity onPress={() => setProductName('')} style={styles.clearBtn}>
+                <Ionicons name="close-circle" size={18} color={colors.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Quick Item Chips */}
+          <View style={styles.chipsSection}>
+            <Text style={styles.chipsSectionLabel}>QUICK SUGGESTIONS</Text>
+            <View style={styles.chipsRow}>
+              {QUICK.map((item) => (
+                <TouchableOpacity
+                  key={item.name}
+                  style={styles.chip}
+                  onPress={() => {
+                    setBarcode('');
+                    setProductName(item.name);
+                  }}
+                  disabled={loading}
+                >
+                  <Text style={styles.chipIcon}>{item.icon}</Text>
+                  <Text style={styles.chipText}>{item.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <PrimaryButton
+            onPress={() => analyze()}
+            disabled={loading}
+            loading={loading}
+            icon={<Ionicons name="sparkles" size={18} color={colors.white} />}
+            style={{ marginTop: spacing.lg }}
+          >
+            ANALYZE PRODUCT
+          </PrimaryButton>
+        </View>
+
+        {/* Alternative Methods Cards */}
+        <SectionHeader>ALTERNATIVE WAYS TO LOG</SectionHeader>
+
+        <View style={styles.altRow}>
+          <Pressable
+            style={({ pressed }) => [styles.altCard, pressed && styles.pressed]}
             onPress={() => navigation.navigate('ManualEntry', { productName: productName.trim() || '' })}
             disabled={loading}
           >
-            <Text style={styles.manualBtnText}>Enter Nutrition Manually</Text>
-          </TouchableOpacity>
-        ) : null}
+            <View style={styles.altIconCircle}>
+              <Ionicons name="create-outline" size={22} color={colors.emerald} />
+            </View>
+            <Text style={styles.altTitle}>Manual Entry</Text>
+            <Text style={styles.altCopy}>Type nutrition facts manually</Text>
+          </Pressable>
 
-        <TextInput
-          ref={productNameRef}
-          style={[styles.input, { marginTop: 12 }, notFound ? styles.inputNotFound : null]}
-          placeholder={namePlaceholder}
-          placeholderTextColor={C.muted}
-          value={productName}
-          onChangeText={(t) => {
-            setProductName(t);
-            if (notFound) setNotFound(false);
-          }}
-        />
-
-        <View style={styles.chipsRow}>
-          {QUICK.map((q) => (
-            <TouchableOpacity
-              key={q}
-              style={styles.chip}
-              onPress={() => {
-                setBarcode('');
-                setProductName(q);
-              }}
-              disabled={loading}
-            >
-              <Text style={styles.chipText}>{q}</Text>
-            </TouchableOpacity>
-          ))}
+          <Pressable
+            style={({ pressed }) => [styles.altCard, pressed && styles.pressed]}
+            onPress={() => navigation.navigate('OCRScan', { productName: productName.trim() || '' })}
+            disabled={loading}
+          >
+            <View style={styles.altIconCircle}>
+              <Ionicons name="document-text-outline" size={22} color={colors.info} />
+            </View>
+            <Text style={styles.altTitle}>Scan Label OCR</Text>
+            <Text style={styles.altCopy}>Snap photo of nutrition table</Text>
+          </Pressable>
         </View>
 
-        <TouchableOpacity style={styles.btn} onPress={() => analyze()} disabled={loading}>
-          {loading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={C.white} />
-              <Text style={styles.btnText}>Analysing…</Text>
-            </View>
-          ) : (
-            <Text style={styles.btnText}>ANALYSE</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        style={styles.manualOption}
-        onPress={() => navigation.navigate('ManualEntry', { productName: productName.trim() || '' })}
-        disabled={loading}
-      >
-        <Text style={styles.manualOptionText}>Enter Manually</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.ocrOption}
-        onPress={() => navigation.navigate('OCRScan', { productName: productName.trim() || '' })}
-        disabled={loading}
-      >
-        <Text style={styles.ocrOptionText}>📋 Scan Nutrition Label (OCR)</Text>
-      </TouchableOpacity>
-
-      <View style={styles.cameraHintCard}>
-        <Text style={styles.cameraHintTitle}>Tip</Text>
-        <Text style={styles.cameraHintText}>Scanning via camera is supported on mobile. On web, manual entry works best.</Text>
-      </View>
-    </ScrollView>
+        {/* Web Notice Card */}
+        {Platform.OS === 'web' && (
+          <View style={styles.hintCard}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.muted} style={{ marginRight: 8 }} />
+            <Text style={styles.hintText}>
+              Testing in browser? Use product name search or quick suggestion chips for the best experience.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: C.cream },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: C.cream },
-  title: { fontSize: 28, fontWeight: '900', color: C.ink },
-  subtitle: { marginTop: 6, color: C.muted, fontWeight: '600', marginBottom: 16 },
-  card: { backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
-  cameraToggle: { marginBottom: 12, backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' },
-  cameraToggleText: { color: C.ink, fontWeight: '900' },
-  permissionText: { marginBottom: 10, color: C.muted, fontWeight: '700' },
-  cameraWrap: { height: 260, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.border, marginBottom: 12, backgroundColor: '#000' },
-  cameraOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 12, backgroundColor: 'rgba(0,0,0,0.35)' },
-  cameraHint: { color: C.white, fontWeight: '800' },
-  cancelBtn: { marginTop: 10, alignSelf: 'flex-start', backgroundColor: C.white, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
-  cancelBtnText: { color: C.ink, fontWeight: '900' },
-  input: { backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, paddingVertical: 11, paddingHorizontal: 14, color: C.ink, fontWeight: '600' },
-  inputNotFound: { borderColor: '#F59E0B' },
-  notFoundText: { marginTop: 10, color: '#A9731B', fontWeight: '800' },
-  manualBtn: { marginTop: 10, backgroundColor: C.white, borderRadius: 10, borderWidth: 1.5, borderColor: '#F59E0B', paddingVertical: 12, alignItems: 'center' },
-  manualBtnText: { color: '#A9731B', fontWeight: '900' },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: C.white, borderWidth: 1, borderColor: C.border },
-  chipText: { color: C.ink, fontWeight: '800' },
-  btn: { marginTop: 14, backgroundColor: C.sage, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
-  btnText: { color: C.white, fontWeight: '900', fontSize: 16, letterSpacing: 0.6 },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  manualOption: { marginTop: 12, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14, alignItems: 'center' },
-  manualOptionText: { color: C.ink, fontWeight: '900' },
-  ocrOption: { marginTop: 10, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14, alignItems: 'center' },
-  ocrOptionText: { color: C.ink, fontWeight: '900' },
-  cameraHintCard: { marginTop: 14, backgroundColor: C.white, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14 },
-  cameraHintTitle: { color: C.ink, fontWeight: '900' },
-  cameraHintText: { marginTop: 6, color: C.muted, fontWeight: '600' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  header: {
+    marginBottom: spacing.md,
+  },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: colors.emerald,
+  },
+  title: {
+    ...typography.title,
+    color: colors.charcoal,
+    marginTop: 2,
+  },
+  subtitle: {
+    ...typography.subtitle,
+    color: colors.muted,
+    marginTop: 4,
+  },
+  cameraCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+  cameraCardIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: colors.emeraldLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  cameraCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  cameraCardSubtitle: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  pressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
+  },
+  cameraWrap: {
+    height: 280,
+    borderRadius: 22,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+    backgroundColor: '#000',
+    position: 'relative',
+    ...shadows.md,
+  },
+  viewfinderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewfinderCornerTopLeft: {
+    position: 'absolute',
+    top: 40,
+    left: 40,
+    width: 28,
+    height: 28,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: colors.emerald,
+    borderRadius: 4,
+  },
+  viewfinderCornerTopRight: {
+    position: 'absolute',
+    top: 40,
+    right: 40,
+    width: 28,
+    height: 28,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderColor: colors.emerald,
+    borderRadius: 4,
+  },
+  viewfinderCornerBottomLeft: {
+    position: 'absolute',
+    bottom: 60,
+    left: 40,
+    width: 28,
+    height: 28,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: colors.emerald,
+    borderRadius: 4,
+  },
+  viewfinderCornerBottomRight: {
+    position: 'absolute',
+    bottom: 60,
+    right: 40,
+    width: 28,
+    height: 28,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderColor: colors.emerald,
+    borderRadius: 4,
+  },
+  scanLaser: {
+    width: '70%',
+    height: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  cameraHintPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  cameraHint: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  cancelBtnText: {
+    color: colors.charcoal,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  inputCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+  inputSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: colors.muted,
+    marginBottom: spacing.md,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    height: 50,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  textInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.charcoal,
+  },
+  clearBtn: {
+    padding: 4,
+  },
+  notFoundBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 14,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  notFoundText: {
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  manualEntryLink: {
+    marginTop: 6,
+  },
+  manualEntryLinkText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.emerald,
+  },
+  inputNotFound: {
+    borderColor: colors.warning,
+  },
+  chipsSection: {
+    marginTop: spacing.md,
+  },
+  chipsSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: colors.muted,
+    marginBottom: 8,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.charcoal,
+  },
+  altRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  altCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'flex-start',
+    ...shadows.sm,
+  },
+  altIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  altTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.charcoal,
+  },
+  altCopy: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  hintText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+  },
 });
+

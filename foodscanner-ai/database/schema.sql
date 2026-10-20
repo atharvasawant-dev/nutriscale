@@ -54,8 +54,38 @@ CREATE TABLE IF NOT EXISTS daily_food_log (
     barcode TEXT NOT NULL,
     product_name TEXT NOT NULL,
     calories REAL,
+    fat REAL,
+    sugar REAL,
+    salt REAL,
+    protein REAL,
+    fiber REAL,
+    carbs REAL,
+    scan_session_id INTEGER UNIQUE,
+    weight_grams REAL,
     consumed_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS scan_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    barcode TEXT NOT NULL,
+    product_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE IF NOT EXISTS portion_measurements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_session_id INTEGER NOT NULL UNIQUE,
+    weight_grams REAL NOT NULL,
+    source TEXT NOT NULL,
+    stability TEXT NOT NULL DEFAULT 'stable',
+    measured_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (scan_session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
@@ -63,3 +93,4 @@ CREATE INDEX IF NOT EXISTS idx_products_name ON products(product_name);
 CREATE INDEX IF NOT EXISTS idx_scan_history_barcode ON scan_history(barcode);
 CREATE INDEX IF NOT EXISTS idx_nutrition_product_id ON nutrition(product_id);
 CREATE INDEX IF NOT EXISTS idx_daily_food_log_consumed_at ON daily_food_log(consumed_at);
+CREATE INDEX IF NOT EXISTS idx_scan_sessions_user_id ON scan_sessions(user_id);

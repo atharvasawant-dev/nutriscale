@@ -10,6 +10,7 @@ import os
 import random
 import re
 import time
+from typing import Literal
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
@@ -33,6 +34,8 @@ from services.additive_analyzer import analyze_additives
 from services.food_health_score import compute_food_health_score
 from services.final_decision_engine import compute_final_decision
 from services.decision_explainer import build_decision_reasons
+from services.nutriscale import create_scan_session, get_owned_session, record_measurement, save_session
+from services.nutrition_intelligence import NutritionIntelligence, build_nutrition_intelligence
 
 import pandas as pd
 from rapidfuzz import fuzz
@@ -52,6 +55,11 @@ app.add_middleware(
 class ScanRequest(BaseModel):
     barcode: str = Field(..., pattern=r"^\d{8,14}$")
     product_name: str | None = None
+
+
+class MeasurementRequest(BaseModel):
+    weight_grams: float = Field(..., gt=0, le=100000)
+    source: Literal["mock"] = "mock"
 
 
 class CompareRequest(BaseModel):
@@ -806,6 +814,7 @@ def scan(
             user_id=int(current_user.id),
             daily_calorie_limit=int(current_user.daily_calorie_limit or 2000),
             diet_type=current_user.diet_type,
+            log_consumption=False,
         )
     except Exception as e:
         logging.error(f"Scan error for barcode {barcode}: {str(e)}")
@@ -830,7 +839,12 @@ def scan(
     else:
         recommendations = []
 
+    scan_session = create_scan_session(db, user_id=int(current_user.id), product=result)
+    db.commit()
+
     return {
+        "scan_session_id": scan_session.id,
+        "nutrition_basis": "per_100g",
         "product": {
             "name": result.get("product_name"),
             "nutrition": nutrition,
@@ -851,6 +865,52 @@ def scan(
             "consumed": result.get("today_calories_consumed"),
             "remaining": result.get("remaining_calories"),
         },
+    }
+
+
+@app.post("/scan-sessions/{session_id}/measurement", tags=["tracking"])
+def measure_scan_session(
+    session_id: int,
+    req: MeasurementRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    session = get_owned_session(db, session_id=session_id, user_id=int(current_user.id))
+    _, portion = record_measurement(
+        db,
+        session=session,
+        weight_grams=req.weight_grams,
+        source=req.source,
+    )
+    intelligence = build_nutrition_intelligence(
+        db,
+        session=session,
+        user=current_user,
+        portion=portion,
+    )
+    db.commit()
+    return {
+        "scan_session_id": session.id,
+        "weight_grams": req.weight_grams,
+        "nutrition_basis": "measured_portion",
+        "portion_nutrition": portion,
+        "nutrition_intelligence": intelligence.model_dump(),
+    }
+
+
+@app.post("/scan-sessions/{session_id}/save", tags=["tracking"])
+def save_scan_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    session = get_owned_session(db, session_id=session_id, user_id=int(current_user.id))
+    food_log, portion = save_session(db, session=session)
+    db.commit()
+    return {
+        "saved": True,
+        "food_log_id": food_log.id,
+        "portion_nutrition": portion,
     }
 
 

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getToken, removeToken, saveToken } from '../utils/storage';
 
@@ -9,7 +8,17 @@ export function AuthProvider({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(null);
 
   useEffect(() => {
-    getToken().then((token) => setIsLoggedIn(!!token));
+    let mounted = true;
+    getToken()
+      .then((token) => {
+        if (mounted) setIsLoggedIn(!!token);
+      })
+      .catch((_e) => {
+        if (mounted) setIsLoggedIn(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = async (token) => {
@@ -20,8 +29,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await removeToken();
-      await AsyncStorage.clear();
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     setIsLoggedIn(false);

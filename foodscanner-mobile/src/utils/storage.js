@@ -4,13 +4,47 @@ const TOKEN_KEY = 'foodscanner_token';
 
 export async function saveToken(token) {
   if (!token) return;
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+  try {
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+  } catch (_e) {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(TOKEN_KEY, token);
+      } catch (_err) {
+        // ignore
+      }
+    }
+  }
 }
 
 export async function getToken() {
-  return AsyncStorage.getItem(TOKEN_KEY);
+  try {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (token) return token;
+  } catch (_e) {
+    // fallback to localStorage
+  }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      return window.localStorage.getItem(TOKEN_KEY);
+    } catch (_err) {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function removeToken() {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  try {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  } catch (_e) {
+    // fallback to localStorage
+  }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch (_err) {
+      // ignore
+    }
+  }
 }

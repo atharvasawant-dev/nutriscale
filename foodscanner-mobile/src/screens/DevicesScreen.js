@@ -44,7 +44,7 @@ export default function DevicesScreen({ navigation }) {
         </View>
 
         <Text style={styles.title}>Your NutriScale</Text>
-        <Text style={styles.subtitle}>Manage the physical smart scale & scanner used to measure your portions.</Text>
+        <Text style={styles.subtitle}>Manage the physical smart scale & webcam scanner used to measure your portions.</Text>
 
         {/* Primary Active Device Card */}
         <View style={styles.deviceCard}>
@@ -98,33 +98,33 @@ export default function DevicesScreen({ navigation }) {
 
         {/* Physical Hardware Blueprint */}
         <View style={styles.section}>
-          <SectionHeader action={<Text style={styles.sectionPill}>ESP32 IOT</Text>}>
+          <SectionHeader action={<Text style={styles.sectionPill}>ESP8266 IOT</Text>}>
             PHYSICAL HARDWARE SPECS
           </SectionHeader>
           <View style={styles.hardwareCard}>
             <HardwareItem
               icon="hardware-chip-outline"
               label="MICROCONTROLLER"
-              value="ESP32 Dual-Core"
-              detail="2.4GHz Wi-Fi & Bluetooth 4.2 BLE"
+              value="ESP8266 NodeMCU ESP-12E"
+              detail="80/160 MHz Tensilica L106 · 802.11 b/g/n Wi-Fi"
             />
             <HardwareItem
               icon="speedometer-outline"
               label="WEIGHT MEASUREMENT"
-              value="HX711 + 5kg Load Cell"
-              detail="24-bit high-precision analog-to-digital converter"
+              value="HX711 + 10 kg Load Cell"
+              detail="24-bit differential ADC · Configurable calibration factor"
             />
             <HardwareItem
-              icon="barcode-outline"
-              label="BARCODE SCANNER"
-              value="GM65 Optical Reader"
-              detail="Fast 1D/2D QR & UPC barcode scanning module"
+              icon="videocam-outline"
+              label="BARCODE & OCR SCANNER"
+              value="Webcam / Device Camera"
+              detail="Live barcode detection & nutrition label OCR"
             />
             <HardwareItem
               icon="tv-outline"
-              label="ON-DEVICE DISPLAY"
-              value="0.96'' OLED I2C"
-              detail="Live weight and nutritional readout"
+              label="ON-DEVICE DISPLAY & LED"
+              value="I2C LCD & RGB Status LED"
+              detail="Live weight display & three-colour stability indication"
             />
           </View>
         </View>
@@ -132,15 +132,15 @@ export default function DevicesScreen({ navigation }) {
         {/* Pairing Readiness */}
         <View style={styles.setupCard}>
           <View style={styles.setupHeader}>
-            <Ionicons name="bluetooth-outline" size={22} color={C.textSecondary} />
-            <Text style={styles.setupTitle}>Pair Physical NutriScale</Text>
+            <Ionicons name="wifi-outline" size={22} color={C.textSecondary} />
+            <Text style={styles.setupTitle}>Connect Physical NutriScale</Text>
           </View>
           <Text style={styles.setupBody}>
-            When powering on your NutriScale ESP32 hardware, it will automatically broadcast on your local Wi-Fi / BLE network.
+            When powering on your ESP8266 NodeMCU, it joins your local Wi-Fi and exposes a lightweight REST endpoint: http://[esp-ip]/weight.
           </Text>
           <View style={styles.setupTag}>
             <Ionicons name="radio-outline" size={14} color={C.emerald} />
-            <Text style={styles.setupTagText}>Listening for hardware broadcast...</Text>
+            <Text style={styles.setupTagText}>Local Wi-Fi REST endpoint ready</Text>
           </View>
         </View>
       </ScrollView>

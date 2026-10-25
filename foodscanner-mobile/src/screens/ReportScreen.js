@@ -178,7 +178,7 @@ export default function ReportScreen({ navigation }) {
               Your saved portions and nutrition details will appear here after you scan and measure a food.
             </Text>
             <PrimaryButton
-              onPress={() => navigation.navigate('Main', { screen: 'Scan' })}
+              onPress={() => navigation.navigate('Main', { screen: 'Scale' })}
               icon={<Ionicons name="scan-outline" size={18} color={colors.white} />}
               style={{ marginTop: spacing.lg }}
             >
@@ -223,7 +223,7 @@ export default function ReportScreen({ navigation }) {
 
         {hasSavedFoods && (
           <PrimaryButton
-            onPress={() => navigation.navigate('Main', { screen: 'Scan' })}
+            onPress={() => navigation.navigate('Main', { screen: 'Scale' })}
             icon={<Ionicons name="scan-outline" size={18} color={colors.white} />}
             style={{ marginTop: spacing.md }}
           >

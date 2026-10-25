@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database.models import FoodLog, Nutrition, PortionMeasurement, Product, ScanSession
 from services import db_service
 
-SUPPORTED_MEASUREMENT_SOURCES = {"mock"}
+SUPPORTED_MEASUREMENT_SOURCES = {"mock", "esp8266", "hardware", "wifi"}
 MAX_WEIGHT_GRAMS = 100_000.0
 NUTRIENTS = ("calories", "protein", "carbs", "fat", "sugar", "fiber", "salt")
 

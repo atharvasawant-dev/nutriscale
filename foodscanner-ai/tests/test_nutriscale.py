@@ -377,3 +377,226 @@ def test_mock_scale_is_deterministic():
     assert reading.grams == 126
     assert reading.source == "mock"
     assert reading.stability == "stable"
+
+
+def test_today_endpoint_returns_sugar_sodium_and_portion_fields(db):
+    session, user, _, product = db
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    record_measurement(session, session=scan, weight_grams=100, source="mock")
+    save_session(session, session=scan)
+    session.commit()
+
+    from api.main import today
+    res = today(db=session, current_user=user)
+    assert res["calories_consumed_today"] == 493.0
+    assert res["total_sugar"] == 8.0
+    assert res["total_salt"] == 1.2
+    assert res["total_sodium"] == round(1.2 / 2.5, 2)
+    assert res["total_protein"] == 10.0
+    assert res["total_carbs"] == 20.0
+    assert res["total_fat"] == 5.0
+    assert len(res["foods"]) == 1
+    item = res["foods"][0]
+    assert item["product_name"] == product.product_name
+    assert item["weight_grams"] == 100.0
+    assert item["verdict"] in ("Safe", "Moderate", "Avoid")
+
+
+def test_viewing_without_logging_does_not_modify_food_log_or_daily_totals(db):
+    session, user, _, product = db
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    # Measuring a portion simulates the user placing food on scale and viewing calculated details
+    measurement, portion = record_measurement(session, session=scan, weight_grams=50, source="mock")
+    session.commit()
+
+    assert measurement.weight_grams == 50.0
+    assert portion["calories"] == 246.5
+
+    # Verify no food log entry was created
+    log_count = session.scalar(
+        select(func.count()).select_from(FoodLog).where(FoodLog.user_id == user.id)
+    )
+    assert log_count == 0
+
+    # Verify daily calories and totals remain 0
+    assert db_service.get_today_calories(session, user_id=user.id) == 0.0
+
+    from api.main import today
+    res = today(db=session, current_user=user)
+    assert res["calories_consumed_today"] == 0.0
+    assert res["total_sugar"] == 0.0
+    assert res["total_salt"] == 0.0
+    assert res["total_sodium"] == 0.0
+    assert len(res["foods"]) == 0
+
+
+def test_logging_once_explicitly_saves_portion_and_updates_daily_totals(db):
+    session, user, _, product = db
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    record_measurement(session, session=scan, weight_grams=50, source="mock")
+    saved_log, portion = save_session(session, session=scan)
+    session.commit()
+
+    assert saved_log is not None
+    assert saved_log.weight_grams == 50.0
+    assert saved_log.calories == 246.5
+    assert saved_log.sugar == 4.0
+
+    from api.main import today
+    res = today(db=session, current_user=user)
+    assert res["calories_consumed_today"] == 246.5
+    assert res["total_sugar"] == 4.0
+    assert res["total_salt"] == 0.6
+    assert res["total_sodium"] == round(0.6 / 2.5, 2)
+    assert res["total_protein"] == 5.0
+    assert res["total_carbs"] == 10.0
+    assert res["total_fat"] == 2.5
+    assert len(res["foods"]) == 1
+    assert res["foods"][0]["product_name"] == product.product_name
+
+
+def test_duplicate_prevention_prevents_multiple_logs_for_same_session(db):
+    session, user, _, product = db
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    record_measurement(session, session=scan, weight_grams=100, source="mock")
+
+    # Save session 3 times
+    first, _ = save_session(session, session=scan)
+    second, _ = save_session(session, session=scan)
+    third, _ = save_session(session, session=scan)
+    session.commit()
+
+    assert first.id == second.id == third.id
+
+    log_count = session.scalar(
+        select(func.count()).select_from(FoodLog).where(FoodLog.scan_session_id == scan.id)
+    )
+    assert log_count == 1
+
+    from api.main import today
+    res = today(db=session, current_user=user)
+    assert res["calories_consumed_today"] == 493.0
+    assert len(res["foods"]) == 1
+
+
+def test_daily_total_updates_only_when_logged_and_preserves_history(db):
+    session, user, _, product = db
+
+    # Step 1: Scan & Log product 1 (50g)
+    scan1 = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    record_measurement(session, session=scan1, weight_grams=50, source="mock")
+    save_session(session, session=scan1)
+    session.commit()
+
+    from api.main import today
+    res1 = today(db=session, current_user=user)
+    assert res1["calories_consumed_today"] == 246.5
+    assert len(res1["foods"]) == 1
+
+    # Step 2: User scans product 2 and views details (100g) WITHOUT logging
+    scan2 = create_scan_session(
+        session,
+        user_id=user.id,
+        product={"id": product.id, "barcode": product.barcode},
+    )
+    record_measurement(session, session=scan2, weight_grams=100, source="mock")
+    session.commit()
+
+    # Verify daily total is unchanged after viewing without logging
+    res2 = today(db=session, current_user=user)
+    assert res2["calories_consumed_today"] == 246.5
+    assert len(res2["foods"]) == 1
+
+    # Step 3: Now user explicitly logs product 2
+    save_session(session, session=scan2)
+    session.commit()
+
+    # Verify both foods are now in history and totals reflect both
+    res3 = today(db=session, current_user=user)
+    assert res3["calories_consumed_today"] == 246.5 + 493.0
+    assert len(res3["foods"]) == 2
+
+
+def test_physical_scale_sources_accepted(db):
+    session, user, _, product = db
+    for source in ('esp8266', 'hardware', 'wifi'):
+        scan = create_scan_session(
+            session,
+            user_id=user.id,
+            product={'id': product.id, 'barcode': product.barcode},
+        )
+        measurement, portion = record_measurement(session, session=scan, weight_grams=126, source=source)
+        assert measurement.source == source
+        assert measurement.weight_grams == 126.0
+        assert portion['calories'] == pytest.approx(621.18)
+
+
+def test_unsupported_scale_source_rejected(db):
+    session, user, _, product = db
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={'id': product.id, 'barcode': product.barcode},
+    )
+    with pytest.raises(HTTPException) as error:
+        record_measurement(session, session=scan, weight_grams=100, source='bluetooth_unknown')
+    assert error.value.status_code == 422
+    assert 'unsupported measurement source' in str(error.value.detail)
+
+
+def test_measure_scan_session_endpoint_with_esp8266_source(db):
+    session, user, other, product = db
+    from api.main import MeasurementRequest, measure_scan_session
+    scan = create_scan_session(
+        session,
+        user_id=user.id,
+        product={'id': product.id, 'barcode': product.barcode},
+    )
+    session.commit()
+
+    # Wrong user cannot measure session
+    with pytest.raises(HTTPException) as err:
+        measure_scan_session(
+            session_id=scan.id,
+            req=MeasurementRequest(weight_grams=85.0, source='esp8266'),
+            db=session,
+            current_user=other,
+        )
+    assert err.value.status_code == 404
+
+    # Owner can measure session with esp8266
+    res = measure_scan_session(
+        session_id=scan.id,
+        req=MeasurementRequest(weight_grams=85.0, source='esp8266'),
+        db=session,
+        current_user=user,
+    )
+    assert res['scan_session_id'] == scan.id
+    assert res['weight_grams'] == 85.0
+    assert scan.measurement.source == 'esp8266'
+    assert res['portion_nutrition']['calories'] == pytest.approx(493 * 0.85)
+
+    # Explicit saving and daily report integration works
+    saved_log, portion = save_session(session, session=scan)
+    session.commit()
+    assert saved_log.weight_grams == 85.0

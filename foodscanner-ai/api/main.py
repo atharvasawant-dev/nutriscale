@@ -35,10 +35,19 @@ from services.food_health_score import compute_food_health_score
 from services.final_decision_engine import compute_final_decision
 from services.decision_explainer import build_decision_reasons
 from services.nutriscale import create_scan_session, get_owned_session, record_measurement, save_session
+from services.thingspeak_service import publish_saved_portion
 from services.nutrition_intelligence import NutritionIntelligence, build_nutrition_intelligence
 
 import pandas as pd
 from rapidfuzz import fuzz
+
+
+from dotenv import load_dotenv
+
+load_dotenv()
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
 
 
 app = FastAPI(title="FoodScanner AI API")
@@ -59,7 +68,7 @@ class ScanRequest(BaseModel):
 
 class MeasurementRequest(BaseModel):
     weight_grams: float = Field(..., gt=0, le=100000)
-    source: Literal["mock"] = "mock"
+    source: Literal["mock", "esp8266", "hardware", "wifi"] = "mock"
 
 
 class CompareRequest(BaseModel):
@@ -771,28 +780,82 @@ def today(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     today_calories = db_service.get_today_calories(db, user_id=int(current_user.id))
+    calorie_limit = float(current_user.daily_calorie_limit or 2000)
     remaining_calories = db_service.get_remaining_calories(
         db,
-        daily_limit=float(current_user.daily_calorie_limit or 2000),
+        daily_limit=calorie_limit,
         user_id=int(current_user.id),
     )
 
     start, end = db_service._local_day_bounds()
-    today_foods = db.execute(
-        select(FoodLog.product_name, FoodLog.calories, FoodLog.consumed_at).where(
+    today_logs = db.execute(
+        select(FoodLog).where(
             FoodLog.user_id == int(current_user.id),
             FoodLog.consumed_at >= start,
             FoodLog.consumed_at < end,
-        )
-    ).all()
+        ).order_by(FoodLog.consumed_at.desc())
+    ).scalars().all()
+
+    total_sugar = 0.0
+    total_salt = 0.0
+    total_fat = 0.0
+    total_protein = 0.0
+    total_carbs = 0.0
+    food_items = []
+    for log in today_logs:
+        cal = float(log.calories) if log.calories is not None else None
+        sugar_val = float(log.sugar) if log.sugar is not None else None
+        salt_val = float(log.salt) if log.salt is not None else None
+        fat_val = float(log.fat) if log.fat is not None else None
+        protein_val = float(log.protein) if log.protein is not None else None
+        carbs_val = float(log.carbs) if log.carbs is not None else None
+        weight_val = float(log.weight_grams) if log.weight_grams is not None else None
+
+        if sugar_val is not None:
+            total_sugar += sugar_val
+        if salt_val is not None:
+            total_salt += salt_val
+        if fat_val is not None:
+            total_fat += fat_val
+        if protein_val is not None:
+            total_protein += protein_val
+        if carbs_val is not None:
+            total_carbs += carbs_val
+
+        verdict = "Safe"
+        if (sugar_val is not None and sugar_val > 15) or (cal is not None and cal > 200):
+            verdict = "Moderate"
+        if (sugar_val is not None and sugar_val > 35) or (salt_val is not None and salt_val > 3.0):
+            verdict = "Avoid"
+
+        food_items.append({
+            "product_name": log.product_name,
+            "calories": cal,
+            "weight_grams": weight_val,
+            "sugar": sugar_val,
+            "salt": salt_val,
+            "fat": fat_val,
+            "protein": protein_val,
+            "carbs": carbs_val,
+            "verdict": verdict,
+            "consumed_at": log.consumed_at,
+        })
+
+    total_sodium = round(total_salt / 2.5, 2)
 
     return {
         "calories_consumed_today": today_calories,
         "remaining_calories": remaining_calories,
-        "foods": [
-            {"product_name": r[0], "calories": float(r[1]) if r[1] is not None else None, "consumed_at": r[2]}
-            for r in today_foods
-        ],
+        "daily_calorie_limit": calorie_limit,
+        "total_sugar": round(total_sugar, 1),
+        "total_salt": round(total_salt, 2),
+        "total_sodium": total_sodium,
+        "total_fat": round(total_fat, 1),
+        "total_protein": round(total_protein, 1),
+        "total_carbs": round(total_carbs, 1),
+        "target_sugar": 50.0,
+        "target_sodium": 2.0,
+        "foods": food_items,
     }
 
 
@@ -905,8 +968,24 @@ def save_scan_session(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     session = get_owned_session(db, session_id=session_id, user_id=int(current_user.id))
+
+    # Inspect existing database state to prevent duplicate ThingSpeak publishing on re-save
+    is_newly_saved = (
+        db.execute(
+            select(FoodLog.id).where(FoodLog.scan_session_id == session.id)
+        ).scalar_one_or_none() is None
+    )
+
     food_log, portion = save_session(db, session=session)
     db.commit()
+
+    # Publish to ThingSpeak only after successful database commit, for newly saved portions only
+    if is_newly_saved:
+        try:
+            publish_saved_portion(food_log)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("ThingSpeak publishing encountered error: %s", type(exc).__name__)
+
     return {
         "saved": True,
         "food_log_id": food_log.id,

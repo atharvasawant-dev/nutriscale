@@ -140,10 +140,10 @@ export async function scanProduct(barcode, productName) {
   return res.data;
 }
 
-export async function measurePortion(sessionId, weightGrams) {
+export async function measurePortion(sessionId, weightGrams, source = 'mock') {
   const res = await client.post(`/scan-sessions/${sessionId}/measurement`, {
     weight_grams: weightGrams,
-    source: 'mock',
+    source,
   });
   return res.data;
 }

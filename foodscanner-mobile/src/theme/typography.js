@@ -1,6 +1,10 @@
+import { Platform } from 'react-native';
+
 export const typography = {
-  sans: 'System',
-  serif: 'System',
+  sans: Platform.select({ ios: 'System', android: 'Roboto', default: 'sans-serif' }),
+  serif: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+  fraunces: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
+  inter: Platform.select({ ios: 'System', android: 'Roboto', default: 'sans-serif' }),
   eyebrow: {
     fontSize: 11,
     fontWeight: '800',
@@ -37,4 +41,3 @@ export const typography = {
     letterSpacing: 0.8,
   },
 };
-

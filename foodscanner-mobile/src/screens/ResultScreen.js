@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { explainProduct } from '../services/api';
+import { explainProduct, logFoodManual, savePortion } from '../services/api';
+import { Alert } from 'react-native';
 import { colors, shadows, spacing } from '../theme';
 import PrimaryButton from '../components/PrimaryButton';
 import SectionHeader from '../components/SectionHeader';
@@ -108,19 +109,53 @@ export default function ResultScreen({ route, navigation }) {
   const additiveAnalysis = result?.analysis?.additive_analysis || result?.additive_analysis;
   const dietNote = result?.diet_note;
 
-  const [servingGrams, setServingGrams] = useState('100');
+  const initialServing = route?.params?.result?.measured_weight
+    ? String(Math.round(route.params.result.measured_weight))
+    : '100';
+
+  const [servingGrams, setServingGrams] = useState(initialServing);
   const [loadingExplain, setLoadingExplain] = useState(false);
   const [explain, setExplain] = useState(null);
   const [explainError, setExplainError] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [savedPortion, setSavedPortion] = useState(Boolean(route?.params?.savedPortion));
+  const [savingPortion, setSavingPortion] = useState(false);
 
   useEffect(() => {
-    setServingGrams('100');
+    setServingGrams(
+      route?.params?.result?.measured_weight
+        ? String(Math.round(route.params.result.measured_weight))
+        : '100'
+    );
+    setSavedPortion(Boolean(route?.params?.savedPortion));
     setExplain(null);
     setExplainError(false);
     setShowBreakdown(false);
     setLoadingExplain(false);
-  }, [route?.params?.timestamp]);
+  }, [route?.params?.timestamp, route?.params?.savedPortion, route?.params?.result?.measured_weight]);
+
+  const handleLogFromDetails = async () => {
+    if (savedPortion || savingPortion) return;
+    setSavingPortion(true);
+    try {
+      const sId = result?.scan_session_id;
+      if (sId) {
+        await savePortion(sId);
+      } else {
+        await logFoodManual(productName || 'Weighed Food', perServing.calories);
+      }
+      setSavedPortion(true);
+      Alert.alert(
+        'Portion Logged to Today',
+        `${productName || 'Food item'} (${servingSizeNum} g) has been recorded to today's intake.`
+      );
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || "Could not record portion to today's intake. Please try again.";
+      Alert.alert('Logging Failed', msg);
+    } finally {
+      setSavingPortion(false);
+    }
+  };
 
   useEffect(() => {
     setServingGrams('100');
@@ -216,7 +251,7 @@ export default function ResultScreen({ route, navigation }) {
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
           <Text style={styles.emptyText}>No result to show.</Text>
-          <PrimaryButton onPress={() => navigation.navigate('Main', { screen: 'Scan' })}>
+          <PrimaryButton onPress={() => navigation.navigate('Main', { screen: 'Scale' })}>
             SCAN FOOD
           </PrimaryButton>
         </View>
@@ -451,6 +486,31 @@ export default function ResultScreen({ route, navigation }) {
             </View>
           ) : null}
         </View>
+
+        {/* Log to Today's Intake Button */}
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Log to Today's Intake"
+          onPress={handleLogFromDetails}
+          disabled={savedPortion || savingPortion}
+          style={[styles.resultLogButton, savedPortion && styles.resultLogButtonDone]}
+        >
+          {savingPortion ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons
+                name={savedPortion ? "checkmark-circle" : "add-circle-outline"}
+                size={18}
+                color={colors.white}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.resultLogButtonText}>
+                {savedPortion ? "Logged to Today's Intake ✓" : "Log to Today's Intake"}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Scan Another Button */}
         <PrimaryButton
@@ -854,6 +914,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.muted,
     marginTop: 6,
+  },
+  resultLogButton: {
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: colors.primaryPurple,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+    ...shadows.sm,
+  },
+  resultLogButtonDone: {
+    backgroundColor: '#10B981',
+  },
+  resultLogButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.white,
   },
 });
 
